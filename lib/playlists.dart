@@ -40,6 +40,7 @@ class PlaylistStore extends ChangeNotifier {
   static final instance = PlaylistStore._().._load();
 
   static const _key = 'playlists';
+  static const favourites = 'Favourites';
   Map<String, List<PlaylistEntry>> _playlists = {};
 
   /// Restores saved playlists from [json]; exposed for tests.
@@ -102,6 +103,17 @@ class PlaylistStore extends ChangeNotifier {
   /// Saves [songs] as [name], replacing a playlist of that name.
   Future<void> replace(String name, List<Song> songs) async {
     _playlists[name] = songs.map(PlaylistEntry.of).toList();
+    await _save();
+  }
+
+  /// Saves [ordered] (the playlist's songs on this phone) as its new order;
+  /// entries for songs not on the phone are kept after them.
+  Future<void> reorder(String name, List<Song> ordered) async {
+    final missing = [
+      for (final entry in _playlists[name] ?? const <PlaylistEntry>[])
+        if (!ordered.any(entry.matches)) entry,
+    ];
+    _playlists[name] = [...ordered.map(PlaylistEntry.of), ...missing];
     await _save();
   }
 

@@ -1007,14 +1007,18 @@ class NowPlayingPage extends StatelessWidget {
                   children: [
                     _DeviceArtwork(song: song, size: artworkSize),
                     const SizedBox(height: 30),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        song.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            song.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                        ),
+                        _FavouriteButton(song: song),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     Align(
@@ -1731,56 +1735,115 @@ class SongCollectionPage extends StatelessWidget {
         ),
         actions: actions,
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 32),
-        itemCount: songs.length + 1,
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
-              child: Row(
+      body: playlist == null
+          ? ListView.builder(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 32),
+              itemCount: songs.length + 1,
+              itemBuilder: (context, index) =>
+                  index == 0 ? _header(context) : _tile(context, index - 1),
+            )
+          // Drag handles, since long-press already opens the song menu.
+          : ReorderableListView.builder(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 32),
+              header: _header(context),
+              buildDefaultDragHandles: false,
+              itemCount: songs.length,
+              onReorderItem: (from, to) {
+                final ordered = [...songs];
+                ordered.insert(to, ordered.removeAt(from));
+                PlaylistStore.instance.reorder(playlist!, ordered);
+              },
+              itemBuilder: (context, index) => Row(
+                key: ValueKey(songs[index].id),
                 children: [
-                  _DeviceArtwork(song: songs.first, size: 96),
-                  const SizedBox(width: 18),
-                  Expanded(
-                    child: Text(
-                      subtitle.toUpperCase(),
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontSize: 11,
-                        letterSpacing: 1.2,
-                      ),
+                  Expanded(child: _tile(context, index)),
+                  ReorderableDragStartListener(
+                    index: index,
+                    child: const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Icon(Icons.drag_handle_rounded),
                     ),
                   ),
                 ],
               ),
-            );
-          }
-          final song = songs[index - 1];
-          return SongTile(
-            song: song,
-            active: player.currentSong?.id == song.id,
-            onTap: () async {
-              // Next/previous follow this page's order, not the whole library.
-              await player.playAt(index - 1, order: songs);
-              if (context.mounted) {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => NowPlayingPage(controller: player),
-                  ),
-                );
-              }
-            },
-            onQueue: () => player.addToQueue(song),
-            onLongPress: () => showSongActions(
-              context,
-              song: song,
-              player: player,
-              playlist: playlist,
+            ),
+    );
+  }
+
+  Widget _header(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
+    child: Row(
+      children: [
+        _DeviceArtwork(song: songs.first, size: 96),
+        const SizedBox(width: 18),
+        Expanded(
+          child: Text(
+            subtitle.toUpperCase(),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 11,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _tile(BuildContext context, int index) {
+    final song = songs[index];
+    return SongTile(
+      song: song,
+      active: player.currentSong?.id == song.id,
+      onTap: () async {
+        // Next/previous follow this page's order, not the whole library.
+        await player.playAt(index, order: songs);
+        if (context.mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => NowPlayingPage(controller: player),
             ),
           );
-        },
+        }
+      },
+      onQueue: () => player.addToQueue(song),
+      onLongPress: () => showSongActions(
+        context,
+        song: song,
+        player: player,
+        playlist: playlist,
       ),
+    );
+  }
+}
+
+/// Heart that adds or removes the song from the Favourites playlist.
+class _FavouriteButton extends StatelessWidget {
+  const _FavouriteButton({required this.song});
+
+  final Song song;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = PlaylistStore.instance;
+    return ListenableBuilder(
+      listenable: store,
+      builder: (context, _) {
+        final liked = store.contains(PlaylistStore.favourites, song);
+        return IconButton(
+          tooltip: liked ? 'Remove from Favourites' : 'Add to Favourites',
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            liked
+                ? store.remove(PlaylistStore.favourites, song)
+                : store.add(PlaylistStore.favourites, song);
+          },
+          icon: Icon(
+            liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            color: liked ? Theme.of(context).colorScheme.primary : null,
+          ),
+        );
+      },
     );
   }
 }

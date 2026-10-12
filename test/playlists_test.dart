@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_player/playlists.dart';
 import 'package:nova_player/song.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Song song(String id, String file) => Song.fromMap({
   'id': id,
@@ -11,6 +12,7 @@ Song song(String id, String file) => Song.fromMap({
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues({});
 
   test('finds songs by file name after Android re-indexes their ids', () {
     final store = PlaylistStore.instance
@@ -27,5 +29,17 @@ void main() {
     ]);
     expect(store.contains('Mix', library.first), isTrue);
     expect(store.lengthOf('Mix'), 3);
+  });
+
+  test('reorder keeps entries for songs no longer on the phone', () async {
+    final store = PlaylistStore.instance
+      ..restore(
+        '{"Fav": [{"id": "1", "file": "a"}, {"id": "9", "file": "gone"}, '
+        '{"id": "2", "file": "b"}]}',
+      );
+    final library = [song('1', 'a'), song('2', 'b')];
+    await store.reorder('Fav', library.reversed.toList());
+    expect(store.songsOf('Fav', library).map((s) => s.id), ['2', '1']);
+    expect(store.lengthOf('Fav'), 3);
   });
 }
