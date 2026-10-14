@@ -1021,13 +1021,36 @@ class NowPlayingPage extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        '${song.artist}  /  ${song.album}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Color(0xFFAFAFAF)),
+                    DefaultTextStyle.merge(
+                      style: const TextStyle(color: Color(0xFFAFAFAF)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: InkWell(
+                              onTap: () => openSongsWhere(
+                                context,
+                                controller,
+                                song.artist,
+                                (other) => other.artist == song.artist,
+                              ),
+                              child: Text(song.artist),
+                            ),
+                          ),
+                          const Text('  /  '),
+                          Flexible(
+                            child: InkWell(
+                              onTap: () => openSongsWhere(
+                                context,
+                                controller,
+                                song.album,
+                                (other) => other.album == song.album,
+                              ),
+                              child: Text(song.album),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 26),
@@ -2132,6 +2155,27 @@ class _SmartPlaylistPageState extends State<_SmartPlaylistPage> {
 String _trackCount(int count) => '$count ${count == 1 ? 'track' : 'tracks'}';
 
 /// Long-press menu for a song: queue, playlists, and navigation.
+/// Opens the library songs matching [match], e.g. one album or artist.
+void openSongsWhere(
+  BuildContext context,
+  PlayerController player,
+  String title,
+  bool Function(Song other) match,
+) {
+  final songs = player.library.where(match).toList(growable: false);
+  if (songs.isEmpty) return;
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => SongCollectionPage(
+        title: title,
+        subtitle: _trackCount(songs.length),
+        songs: songs,
+        player: player,
+      ),
+    ),
+  );
+}
+
 Future<void> showSongActions(
   BuildContext context, {
   required Song song,
@@ -2163,18 +2207,7 @@ Future<void> showSongActions(
 
       void open(String title, bool Function(Song other) match) {
         Navigator.pop(sheetContext);
-        final songs = player.library.where(match).toList(growable: false);
-        if (songs.isEmpty) return;
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => SongCollectionPage(
-              title: title,
-              subtitle: _trackCount(songs.length),
-              songs: songs,
-              player: player,
-            ),
-          ),
-        );
+        openSongsWhere(context, player, title, match);
       }
 
       final idle = player.currentSong == null;
