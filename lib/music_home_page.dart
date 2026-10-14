@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 
 import 'package:flutter/rendering.dart';
 
+import 'downloads.dart';
 import 'group_by.dart';
 import 'listening_history.dart';
 import 'lyrics.dart';
@@ -2731,7 +2732,7 @@ class _SettingsPageState extends State<SettingsPage> {
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: appThemes.length,
+          itemCount: widget.themeController.allThemes.length,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
             mainAxisSpacing: 10,
@@ -2739,7 +2740,7 @@ class _SettingsPageState extends State<SettingsPage> {
             childAspectRatio: 1.25,
           ),
           itemBuilder: (context, index) {
-            final preset = appThemes[index];
+            final preset = widget.themeController.allThemes[index];
             final selected = widget.themeController.preset.id == preset.id;
             return Semantics(
               button: true,
@@ -2802,8 +2803,117 @@ class _SettingsPageState extends State<SettingsPage> {
             );
           },
         ),
+        const SizedBox(height: 18),
+        OutlinedButton.icon(
+          onPressed: () {
+            _catalog = fetchThemeCatalog();
+            _open('Get themes', _themeStore);
+          },
+          icon: const Icon(Icons.download_rounded),
+          label: const Text('Get more themes'),
+        ),
       ],
     );
+  }
+
+  Future<List<AppThemePreset>>? _catalog;
+
+  Widget _themeStore(BuildContext context) {
+    final themes = widget.themeController;
+    return FutureBuilder(
+      future: _catalog,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final catalog = snapshot.data ?? const <AppThemePreset>[];
+        // Installed themes stay removable even if the catalog dropped them.
+        final shown = [
+          ...catalog,
+          ...themes.downloadedThemes.where(
+            (theme) => catalog.every((item) => item.id != theme.id),
+          ),
+        ];
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          children: [
+            if (snapshot.hasError)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: Text(
+                  'Could not load the theme catalog. Check your internet '
+                  'connection and try again.',
+                ),
+              ),
+            for (final preset in shown)
+              Card(
+                color: preset.background,
+                child: ListTile(
+                  leading: _ThemeDot(color: preset.primary),
+                  title: Text(
+                    preset.name,
+                    style: TextStyle(
+                      color: preset.foreground,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  subtitle: Text(
+                    preset.brightness == Brightness.light ? 'Light' : 'Dark',
+                    style: TextStyle(color: preset.secondary),
+                  ),
+                  trailing:
+                      themes.downloadedThemes.any((t) => t.id == preset.id)
+                      ? TextButton(
+                          onPressed: () => themes.removeTheme(preset),
+                          child: Text(
+                            'Remove',
+                            style: TextStyle(color: preset.primary),
+                          ),
+                        )
+                      : FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: preset.primary,
+                            foregroundColor: preset.background,
+                          ),
+                          onPressed: () async {
+                            await themes.installTheme(preset);
+                            await themes.selectPreset(preset);
+                          },
+                          child: const Text('Install'),
+                        ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _downloadFont(BuildContext context) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => const _FontNameDialog(),
+    );
+    if (name == null || name.trim().isEmpty || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context)
+      ..showSnackBar(SnackBar(content: Text('Downloading ${name.trim()}...')));
+    try {
+      await widget.themeController.installFont(name.trim());
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('Installed ${name.trim()}')));
+    } catch (_) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              'Could not download "${name.trim()}". Check the name on '
+              'fonts.google.com and your internet connection.',
+            ),
+          ),
+        );
+    }
   }
 
   // Rebuilt by StatefulBuilder so the radio marks update inside the sub-page route.
@@ -2884,9 +2994,16 @@ class _SettingsPageState extends State<SettingsPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
       children: [
-        for (final font in appFonts)
+        for (final font in themes.allFonts)
           _ChoiceCard(
             selected: themes.font.id == font.id,
+            trailing: themes.downloadedFonts.contains(font)
+                ? IconButton(
+                    tooltip: 'Remove ${font.name}',
+                    onPressed: () => themes.removeFont(font),
+                    icon: const Icon(Icons.delete_outline_rounded),
+                  )
+                : null,
             // 'Roboto' is Android's platform font, so System previews as itself.
             title: Text(
               font.name,
@@ -2898,6 +3015,11 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             onTap: () => themes.selectFont(font),
           ),
+        OutlinedButton.icon(
+          onPressed: () => _downloadFont(context),
+          icon: const Icon(Icons.download_rounded),
+          label: const Text('Download a font'),
+        ),
       ],
     );
   }
@@ -2925,12 +3047,14 @@ class _ChoiceCard extends StatelessWidget {
     required this.title,
     required this.body,
     required this.onTap,
+    this.trailing,
   });
 
   final bool selected;
   final Widget title;
   final Widget body;
   final VoidCallback onTap;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -2975,6 +3099,7 @@ class _ChoiceCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  ?trailing,
                 ],
               ),
             ),
@@ -2996,6 +3121,69 @@ class _ThemeDot extends StatelessWidget {
       width: 18,
       height: 18,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+  }
+}
+
+class _FontNameDialog extends StatefulWidget {
+  const _FontNameDialog();
+
+  @override
+  State<_FontNameDialog> createState() => _FontNameDialogState();
+}
+
+class _FontNameDialogState extends State<_FontNameDialog> {
+  final _name = TextEditingController();
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Download a font'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Any font family from fonts.google.com.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _name,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(hintText: 'Font name'),
+              onSubmitted: (value) => Navigator.pop(context, value),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final name in suggestedFonts)
+                  ActionChip(
+                    label: Text(name),
+                    onPressed: () => Navigator.pop(context, name),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _name.text),
+          child: const Text('Download'),
+        ),
+      ],
     );
   }
 }

@@ -11,6 +11,36 @@ class SettingsStore {
   static const _fontIdKey = 'font_id';
   static const _groupByKey = 'group_by';
   static const _textScaleKey = 'text_scale';
+  static const _downloadedThemesKey = 'downloaded_themes';
+  static const _downloadedFontsKey = 'downloaded_fonts';
+
+  /// Each entry is one theme as JSON.
+  Future<List<String>> loadDownloadedThemes() async =>
+      (await SharedPreferences.getInstance()).getStringList(
+        _downloadedThemesKey,
+      ) ??
+      [];
+
+  Future<void> saveDownloadedThemes(List<String> themes) async {
+    await (await SharedPreferences.getInstance()).setStringList(
+      _downloadedThemesKey,
+      themes,
+    );
+  }
+
+  /// Google Fonts family names.
+  Future<List<String>> loadDownloadedFonts() async =>
+      (await SharedPreferences.getInstance()).getStringList(
+        _downloadedFontsKey,
+      ) ??
+      [];
+
+  Future<void> saveDownloadedFonts(List<String> names) async {
+    await (await SharedPreferences.getInstance()).setStringList(
+      _downloadedFontsKey,
+      names,
+    );
+  }
 
   Future<QueueMode> loadQueueMode() async {
     final value = (await SharedPreferences.getInstance()).getString(

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "hades",
+    "name": "Hades",
+    "brightness": "dark",
+    "background": "#170A0C",
+    "surface": "#2A1215",
+    "foreground": "#F3E3CF",
+    "primary": "#E5482E",
+    "secondary": "#7FD957"
+  },
+  {
+    "id": "hyper_light_drifter",
+    "name": "Hyper Light Drifter",
+    "brightness": "dark",
+    "background": "#1A1430",
+    "surface": "#2A2148",
+    "foreground": "#F2E9F7",
+    "primary": "#FF4F8B",
+    "secondary": "#4FE3E0"
+  },
+  {
+    "id": "tunic",
+    "name": "Tunic",
+    "brightness": "light",
+    "background": "#F4ECD8",
+    "surface": "#E6D9B8",
+    "foreground": "#2E2A24",
+    "primary": "#3D8E5A",
+    "secondary": "#D9822B"
+  },
+  {
+    "id": "undertale",
+    "name": "Undertale",
+    "brightness": "dark",
+    "background": "#000000",
+    "surface": "#141414",
+    "foreground": "#FFFFFF",
+    "primary": "#FFDE00",
+    "secondary": "#FF2B2B"
+  },
+  {
+    "id": "stardew_valley",
+    "name": "Stardew Valley",
+    "brightness": "light",
+    "background": "#F6E7C1",
+    "surface": "#EAD3A0",
+    "foreground": "#4A2F1A",
+    "primary": "#3F8F3F",
+    "secondary": "#4A90C8"
+  },
+  {
+    "id": "subnautica",
+    "name": "Subnautica",
+    "brightness": "dark",
+    "background": "#06212E",
+    "surface": "#0C3345",
+    "foreground": "#D7F3F5",
+    "primary": "#37D3C4",
+    "secondary": "#F2A541"
+  }
+]

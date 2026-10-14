@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
+import 'downloads.dart';
 import 'settings_store.dart';
 
 class AppThemePreset {
@@ -13,6 +16,43 @@ class AppThemePreset {
     required this.primary,
     required this.secondary,
   });
+
+  /// Colors are "#RRGGBB" strings, as in themes/catalog.json.
+  factory AppThemePreset.fromJson(Map<String, dynamic> json) {
+    Color color(String key) {
+      final hex = (json[key] as String).replaceFirst('#', '');
+      if (hex.length != 6) throw FormatException('Bad color $key: $hex');
+      return Color(0xFF000000 | int.parse(hex, radix: 16));
+    }
+
+    return AppThemePreset(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      brightness: json['brightness'] == 'light'
+          ? Brightness.light
+          : Brightness.dark,
+      background: color('background'),
+      surface: color('surface'),
+      foreground: color('foreground'),
+      primary: color('primary'),
+      secondary: color('secondary'),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    String hex(Color color) =>
+        '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
+    return {
+      'id': id,
+      'name': name,
+      'brightness': brightness.name,
+      'background': hex(background),
+      'surface': hex(surface),
+      'foreground': hex(foreground),
+      'primary': hex(primary),
+      'secondary': hex(secondary),
+    };
+  }
 
   final String id;
   final String name;
@@ -311,6 +351,11 @@ const appThemes = [
 class AppFont {
   const AppFont({required this.id, required this.name, this.family});
 
+  /// A Google Fonts family saved on the phone.
+  AppFont.downloaded(this.name)
+    : id = 'download:$name',
+      family = 'Downloaded $name';
+
   final String id;
   final String name;
 
@@ -346,14 +391,28 @@ class ThemeController extends ChangeNotifier {
   ThemeMode mode = ThemeMode.system;
   AppFont font = appFonts.first;
   double textScale = 1.0;
+  List<AppThemePreset> downloadedThemes = [];
+  List<AppFont> downloadedFonts = [];
+
+  List<AppThemePreset> get allThemes => [...appThemes, ...downloadedThemes];
+  List<AppFont> get allFonts => [...appFonts, ...downloadedFonts];
 
   Future<void> load() async {
+    downloadedThemes = [
+      for (final json in await _settings.loadDownloadedThemes())
+        AppThemePreset.fromJson(jsonDecode(json) as Map<String, dynamic>),
+    ];
     final savedId = await _settings.loadThemeId();
     preset =
-        appThemes.where((theme) => theme.id == savedId).firstOrNull ?? preset;
+        allThemes.where((theme) => theme.id == savedId).firstOrNull ?? preset;
     mode = await _settings.loadThemeMode();
+    // Fonts whose files are gone (e.g. app data cleared) are dropped.
+    downloadedFonts = [
+      for (final name in await _settings.loadDownloadedFonts())
+        ?await _tryLoadFont(AppFont.downloaded(name)),
+    ];
     final savedFont = await _settings.loadFontId();
-    font = appFonts.where((item) => item.id == savedFont).firstOrNull ?? font;
+    font = allFonts.where((item) => item.id == savedFont).firstOrNull ?? font;
     textScale = await _settings.loadTextScale() ?? textScale;
     notifyListeners();
   }
@@ -381,6 +440,65 @@ class ThemeController extends ChangeNotifier {
     notifyListeners();
     await _settings.saveThemeMode(value);
   }
+
+  Future<AppFont?> _tryLoadFont(AppFont font) async {
+    try {
+      return await loadDownloadedFont(font) ? font : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> installTheme(AppThemePreset theme) async {
+    downloadedThemes = [
+      ...downloadedThemes.where((item) => item.id != theme.id),
+      theme,
+    ];
+    notifyListeners();
+    await _saveThemes();
+  }
+
+  Future<void> removeTheme(AppThemePreset theme) async {
+    downloadedThemes = downloadedThemes
+        .where((item) => item.id != theme.id)
+        .toList();
+    if (preset.id == theme.id) await selectPreset(appThemes.first);
+    notifyListeners();
+    await _saveThemes();
+  }
+
+  Future<void> _saveThemes() => _settings.saveDownloadedThemes([
+    for (final theme in downloadedThemes) jsonEncode(theme.toJson()),
+  ]);
+
+  /// Downloads a Google Fonts family and selects it. Throws on failure.
+  Future<void> installFont(String name) async {
+    await downloadFont(name);
+    final font = AppFont.downloaded(name);
+    if (await _tryLoadFont(font) == null) {
+      throw StateError('Could not load $name');
+    }
+    downloadedFonts = [
+      ...downloadedFonts.where((item) => item.id != font.id),
+      font,
+    ];
+    await _saveFonts();
+    await selectFont(font);
+  }
+
+  Future<void> removeFont(AppFont font) async {
+    downloadedFonts = downloadedFonts
+        .where((item) => item.id != font.id)
+        .toList();
+    if (this.font.id == font.id) await selectFont(appFonts.first);
+    notifyListeners();
+    await _saveFonts();
+    await deleteFontFiles(font.name);
+  }
+
+  Future<void> _saveFonts() => _settings.saveDownloadedFonts([
+    for (final font in downloadedFonts) font.name,
+  ]);
 }
 
 abstract final class NovaTheme {

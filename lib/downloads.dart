@@ -1,0 +1,126 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter/services.dart';
+
+import 'theme.dart';
+
+/// Themes anyone can add to by editing themes/catalog.json in the repo.
+final themeCatalogUrl = Uri.parse(
+  'https://raw.githubusercontent.com/HarshaanNiles010/nova_player/main/themes/catalog.json',
+);
+
+/// Font names offered before the user types one; any Google Fonts family works.
+const suggestedFonts = [
+  'Press Start 2P',
+  'VT323',
+  'Pixelify Sans',
+  'Silkscreen',
+  'Space Mono',
+  'Orbitron',
+  'Cinzel',
+  'Nunito',
+];
+
+Future<Uint8List> _get(Uri url) async {
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+  try {
+    final response = await (await client.getUrl(url)).close();
+    final bytes = await response.fold<BytesBuilder>(
+      BytesBuilder(),
+      (builder, chunk) => builder..add(chunk),
+    );
+    if (response.statusCode != 200) {
+      throw HttpException('HTTP ${response.statusCode}', uri: url);
+    }
+    return bytes.takeBytes();
+  } finally {
+    client.close();
+  }
+}
+
+Future<List<AppThemePreset>> fetchThemeCatalog() async =>
+    parseThemeCatalog(utf8.decode(await _get(themeCatalogUrl)));
+
+/// Skips entries that are not valid themes instead of failing the whole list.
+List<AppThemePreset> parseThemeCatalog(String json) => [
+  for (final item in jsonDecode(json) as List<dynamic>)
+    ?_tryTheme(item),
+];
+
+AppThemePreset? _tryTheme(Object? item) {
+  try {
+    return AppThemePreset.fromJson(item as Map<String, dynamic>);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// (weight, .ttf url) pairs from a Google Fonts css2 stylesheet.
+List<(int, Uri)> fontFileUrls(String css) => [
+  for (final match in RegExp(
+    r'font-weight:\s*(\d+);\s*src:\s*url\((https://[^)]+\.ttf)\)',
+  ).allMatches(css))
+    (int.parse(match[1]!), Uri.parse(match[2]!)),
+];
+
+/// Downloaded font files live in `<app files>/fonts/<family>-<weight>.ttf`.
+Future<Directory> _fontDir() async {
+  final files = await const MethodChannel(
+    'com.novaplayer/music_library',
+  ).invokeMethod<String>('getFilesDir');
+  return Directory('$files/fonts').create(recursive: true);
+}
+
+String _stem(String name) =>
+    name.toLowerCase().replaceAll(RegExp('[^a-z0-9]+'), '-');
+
+/// Weight files of [name] only: "nunito-400.ttf", not "nunito-sans-400.ttf".
+bool _isFileOf(File file, String name) => RegExp(
+  '^${RegExp.escape(_stem(name))}-\\d+\\.ttf\$',
+).hasMatch(file.uri.pathSegments.last);
+
+/// Downloads regular and bold of a Google Fonts family and saves the files.
+/// Throws when the family does not exist or the phone is offline.
+Future<void> downloadFont(String name) async {
+  // Without a browser user agent, Google serves plain .ttf files.
+  final css = utf8.decode(
+    await _get(
+      Uri.https('fonts.googleapis.com', '/css2', {
+        'family': '$name:wght@400;700',
+      }),
+    ),
+  );
+  final urls = fontFileUrls(css);
+  if (urls.isEmpty) throw FormatException('No font files for $name');
+  final dir = await _fontDir();
+  for (final (weight, url) in urls) {
+    await File(
+      '${dir.path}/${_stem(name)}-$weight.ttf',
+    ).writeAsBytes(await _get(url));
+  }
+}
+
+/// Registers a downloaded font with Flutter; false when its files are gone.
+Future<bool> loadDownloadedFont(AppFont font) async {
+  final dir = await _fontDir();
+  final files = dir.listSync().whereType<File>().where(
+    (file) => _isFileOf(file, font.name),
+  );
+  if (files.isEmpty) return false;
+  final loader = FontLoader(font.family!);
+  for (final file in files) {
+    loader.addFont(file.readAsBytes().then(ByteData.sublistView));
+  }
+  await loader.load();
+  return true;
+}
+
+Future<void> deleteFontFiles(String name) async {
+  for (final file in (await _fontDir()).listSync().whereType<File>()) {
+    if (_isFileOf(file, name)) {
+      await file.delete();
+    }
+  }
+}
