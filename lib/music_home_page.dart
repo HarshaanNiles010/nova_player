@@ -977,10 +977,112 @@ class NowPlayingPage extends StatelessWidget {
         builder: (context, _) {
           final song = controller.currentSong;
           if (song == null) return const SizedBox.shrink();
-          final artworkSize = math.min(
-            MediaQuery.sizeOf(context).width - 48,
-            380.0,
-          );
+          final screen = MediaQuery.sizeOf(context);
+          // Landscape: artwork and controls on the left, lyrics on the right.
+          final wide = screen.width > screen.height;
+          final playerSection = <Widget>[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    song.title,
+                    maxLines: wide ? 1 : 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                ),
+                _FavouriteButton(song: song),
+              ],
+            ),
+            const SizedBox(height: 8),
+            DefaultTextStyle.merge(
+              style: const TextStyle(color: Color(0xFFAFAFAF)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              child: Row(
+                children: [
+                  Flexible(
+                    child: InkWell(
+                      onTap: () => openSongsWhere(
+                        context,
+                        controller,
+                        song.artist,
+                        (other) => other.artist == song.artist,
+                      ),
+                      child: Text(song.artist),
+                    ),
+                  ),
+                  const Text('  /  '),
+                  Flexible(
+                    child: InkWell(
+                      onTap: () => openSongsWhere(
+                        context,
+                        controller,
+                        song.album,
+                        (other) => other.album == song.album,
+                      ),
+                      child: Text(song.album),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: wide ? 8 : 26),
+            _WaveformSeekBar(
+              controller: controller,
+              song: song,
+              height: wide ? 36 : 72,
+            ),
+            SizedBox(height: wide ? 4 : 22),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  tooltip: 'Shuffle',
+                  color: controller.player.shuffleModeEnabled
+                      ? Colors.white
+                      : Colors.white54,
+                  onPressed: controller.toggleShuffle,
+                  icon: const Icon(Icons.shuffle_rounded),
+                ),
+                IconButton(
+                  tooltip: 'Previous',
+                  onPressed: controller.previous,
+                  iconSize: 34,
+                  icon: const Icon(Icons.skip_previous_rounded),
+                ),
+                IconButton.filled(
+                  tooltip: controller.player.playing ? 'Pause' : 'Play',
+                  onPressed: controller.togglePlay,
+                  padding: EdgeInsets.all(wide ? 10 : 18),
+                  iconSize: 38,
+                  icon: Icon(
+                    controller.player.playing
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Next',
+                  onPressed: controller.next,
+                  iconSize: 34,
+                  icon: const Icon(Icons.skip_next_rounded),
+                ),
+                IconButton(
+                  tooltip: 'Repeat',
+                  color: controller.player.loopMode != LoopMode.off
+                      ? Colors.white
+                      : Colors.white54,
+                  onPressed: controller.cycleLoopMode,
+                  icon: Icon(
+                    controller.player.loopMode == LoopMode.one
+                        ? Icons.repeat_one_rounded
+                        : Icons.repeat_rounded,
+                  ),
+                ),
+              ],
+            ),
+          ];
           return Scaffold(
             appBar: AppBar(
               title: const Text(
@@ -1002,114 +1104,61 @@ class NowPlayingPage extends StatelessWidget {
             ),
             body: SafeArea(
               top: false,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
-                child: Column(
-                  children: [
-                    _DeviceArtwork(song: song, size: artworkSize),
-                    const SizedBox(height: 30),
-                    Row(
+              child: wide
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // The artwork takes whatever height the controls leave.
                         Expanded(
-                          child: Text(
-                            song.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.headlineSmall,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(24, 0, 12, 8),
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: LayoutBuilder(
+                                    builder: (context, box) => Center(
+                                      child: _DeviceArtwork(
+                                        song: song,
+                                        size: math.min(
+                                          box.maxWidth,
+                                          box.maxHeight,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                ...playerSection,
+                              ],
+                            ),
                           ),
                         ),
-                        _FavouriteButton(song: song),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(12, 12, 24, 20),
+                            child: _LyricsPanel(
+                              controller: controller,
+                              song: song,
+                            ),
+                          ),
+                        ),
                       ],
-                    ),
-                    const SizedBox(height: 8),
-                    DefaultTextStyle.merge(
-                      style: const TextStyle(color: Color(0xFFAFAFAF)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      child: Row(
+                    )
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+                      child: Column(
                         children: [
-                          Flexible(
-                            child: InkWell(
-                              onTap: () => openSongsWhere(
-                                context,
-                                controller,
-                                song.artist,
-                                (other) => other.artist == song.artist,
-                              ),
-                              child: Text(song.artist),
-                            ),
+                          _DeviceArtwork(
+                            song: song,
+                            size: math.min(screen.width - 48, 380.0),
                           ),
-                          const Text('  /  '),
-                          Flexible(
-                            child: InkWell(
-                              onTap: () => openSongsWhere(
-                                context,
-                                controller,
-                                song.album,
-                                (other) => other.album == song.album,
-                              ),
-                              child: Text(song.album),
-                            ),
-                          ),
+                          const SizedBox(height: 30),
+                          ...playerSection,
+                          const SizedBox(height: 40),
+                          _LyricsPanel(controller: controller, song: song),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 26),
-                    _WaveformSeekBar(controller: controller, song: song),
-                    const SizedBox(height: 22),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        IconButton(
-                          tooltip: 'Shuffle',
-                          color: controller.player.shuffleModeEnabled
-                              ? Colors.white
-                              : Colors.white54,
-                          onPressed: controller.toggleShuffle,
-                          icon: const Icon(Icons.shuffle_rounded),
-                        ),
-                        IconButton(
-                          tooltip: 'Previous',
-                          onPressed: controller.previous,
-                          iconSize: 34,
-                          icon: const Icon(Icons.skip_previous_rounded),
-                        ),
-                        IconButton.filled(
-                          tooltip: controller.player.playing ? 'Pause' : 'Play',
-                          onPressed: controller.togglePlay,
-                          padding: const EdgeInsets.all(18),
-                          iconSize: 38,
-                          icon: Icon(
-                            controller.player.playing
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Next',
-                          onPressed: controller.next,
-                          iconSize: 34,
-                          icon: const Icon(Icons.skip_next_rounded),
-                        ),
-                        IconButton(
-                          tooltip: 'Repeat',
-                          color: controller.player.loopMode != LoopMode.off
-                              ? Colors.white
-                              : Colors.white54,
-                          onPressed: controller.cycleLoopMode,
-                          icon: Icon(
-                            controller.player.loopMode == LoopMode.one
-                                ? Icons.repeat_one_rounded
-                                : Icons.repeat_rounded,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 40),
-                    _LyricsPanel(controller: controller, song: song),
-                  ],
-                ),
-              ),
             ),
           );
         },
@@ -1302,10 +1351,15 @@ class _DeviceArtwork extends StatelessWidget {
 }
 
 class _WaveformSeekBar extends StatelessWidget {
-  const _WaveformSeekBar({required this.controller, required this.song});
+  const _WaveformSeekBar({
+    required this.controller,
+    required this.song,
+    this.height = 72,
+  });
 
   final PlayerController controller;
   final Song song;
+  final double height;
 
   String _label(Duration duration) {
     final minutes = duration.inMinutes;
@@ -1326,7 +1380,7 @@ class _WaveformSeekBar extends StatelessWidget {
         return Column(
           children: [
             SizedBox(
-              height: 72,
+              height: height,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
