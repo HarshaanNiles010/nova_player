@@ -1039,7 +1039,7 @@ class NowPlayingPage extends StatelessWidget {
               children: [
                 IconButton(
                   tooltip: 'Shuffle',
-                  color: controller.player.shuffleModeEnabled
+                  color: controller.shuffleEnabled
                       ? Colors.white
                       : Colors.white54,
                   onPressed: controller.toggleShuffle,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -56,7 +57,15 @@ class PlayerController extends ChangeNotifier {
   int? _anchorBaseIndex;
   bool _hasSelection = false;
   bool _baseSequence = true;
-  bool _restoreShuffle = false;
+
+  /// Play order: [songs], or a shuffled copy of them. The player's own
+  /// shuffle stays off so queued songs can sit right after the current one.
+  List<Song> _order = const [];
+  bool shuffleEnabled = false;
+
+  /// True while songs move around the playing one, so index changes from
+  /// that are not mistaken for playback leaving the queue.
+  bool _rearranging = false;
 
   Song? get currentSong {
     if (!_hasSelection) return null;
@@ -71,8 +80,8 @@ class PlayerController extends ChangeNotifier {
     return List.unmodifiable(_queue.skip(_consumedCount()));
   }
 
-  /// Sequence indices that play after the current song, in play order
-  /// (shuffled when shuffle is on). Queued songs come first.
+  /// Sequence indices that play after the current song. Queued songs come
+  /// first.
   List<int> get _upNextIndices {
     final current = player.currentIndex;
     if (currentSong == null || current == null) return const [];
@@ -104,7 +113,7 @@ class PlayerController extends ChangeNotifier {
       // Jumping past the queue keeps it: the queued songs play next.
       // shortcut: a song listed twice resolves to its first copy, map
       // sequence positions to list positions if that ever matters.
-      await playAt(songs.indexOf(_activeSequence[indices[index]]));
+      await _startAt(_order.indexOf(_activeSequence[indices[index]]));
       return;
     } else {
       await player.seek(Duration.zero, index: indices[index]);
@@ -129,6 +138,7 @@ class PlayerController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    _order = value;
     _activeSequence
       ..clear()
       ..addAll(value);
@@ -141,29 +151,42 @@ class PlayerController extends ChangeNotifier {
 
   /// Plays [baseIndex] of [order] (default: current [songs]); a new order
   /// becomes the base sequence so next/previous follow what the user sees.
+  /// With shuffle on, the rest of the list is shuffled after that song.
   Future<void> playAt(int baseIndex, {List<Song>? order}) async {
-    if (order != null && !identical(order, songs)) {
-      songs = order;
+    if (order != null && !identical(order, songs)) songs = order;
+    if (shuffleEnabled) {
+      _order = _shuffled(songs, first: songs[baseIndex]);
       _baseSequence = false;
+      await _startAt(0);
+    } else {
+      if (!identical(_order, songs)) {
+        _order = songs;
+        _baseSequence = false;
+      }
+      await _startAt(baseIndex);
     }
+  }
+
+  /// Plays [orderIndex] of [_order], keeping the songs still queued.
+  Future<void> _startAt(int orderIndex) async {
     // Songs still waiting in the queue play right after the new song.
     final queued = upcomingQueue.toList();
     _clearQueueState();
     if (queued.isNotEmpty) {
-      await _startWithQueue(baseIndex, queued);
+      await _startWithQueue(orderIndex, queued);
     } else if (!_baseSequence ||
         // An idle player drops seek(index:), so the first play would start at track 0.
         player.processingState == ProcessingState.idle) {
       _activeSequence
         ..clear()
-        ..addAll(songs);
+        ..addAll(_order);
       await player.setAudioSources(
-        songs.map(_source).toList(growable: false),
-        initialIndex: baseIndex,
+        _order.map(_source).toList(growable: false),
+        initialIndex: orderIndex,
       );
       _baseSequence = true;
     } else {
-      await player.seek(Duration.zero, index: baseIndex);
+      await player.seek(Duration.zero, index: orderIndex);
     }
     _hasSelection = true;
     _trackListening();
@@ -172,8 +195,8 @@ class PlayerController extends ChangeNotifier {
     unawaited(player.play());
   }
 
-  /// Plays [songs] up to [baseIndex], then [queued], then the rest of
-  /// [songs], starting at [baseIndex].
+  /// Plays [_order] up to [baseIndex], then [queued], then the rest of
+  /// [_order], starting at [baseIndex].
   Future<void> _startWithQueue(int baseIndex, List<Song> queued) async {
     _queue.addAll(queued);
     _anchorBaseIndex = baseIndex;
@@ -182,9 +205,9 @@ class PlayerController extends ChangeNotifier {
     _activeSequence
       ..clear()
       ..addAll([
-        ...songs.take(baseIndex + 1),
+        ..._order.take(baseIndex + 1),
         ...queued,
-        ...songs.skip(_resumeIndex()),
+        ..._order.skip(_resumeIndex()),
       ]);
     await player.setAudioSources(
       _activeSequence.map(_source).toList(growable: false),
@@ -199,17 +222,11 @@ class PlayerController extends ChangeNotifier {
       return;
     }
     if (_queueStart == null) {
-      _anchorBaseIndex = songs.indexWhere(
+      _anchorBaseIndex = _order.indexWhere(
         (candidate) => candidate.id == currentSong!.id,
       );
       _queueStart = player.currentIndex! + 1;
       _queueEnd = _queueStart! - 1;
-      if (player.shuffleModeEnabled) {
-        // shortcut: queues temporarily play linearly, use a custom ShuffleOrder
-        // if interleaving queued and shuffled tracks becomes a priority.
-        _restoreShuffle = true;
-        await player.setShuffleModeEnabled(false);
-      }
     }
 
     final insertAt = _queueEnd! + 1;
@@ -283,15 +300,15 @@ class PlayerController extends ChangeNotifier {
     await _replaceTailAfter(_resumeIndex());
   }
 
-  /// Where in [songs] playback continues once the queue is done.
+  /// Where in [_order] playback continues once the queue is done.
   int _resumeIndex() => queueResumeIndex(
     mode: queueMode,
     anchorIndex: _anchorBaseIndex!,
-    lastQueuedIndex: songs.indexWhere((song) => song.id == _queue.last.id),
+    lastQueuedIndex: _order.indexWhere((song) => song.id == _queue.last.id),
   );
 
-  Future<void> _replaceTailAfter(int baseIndex) async {
-    final tailStart = (_queueEnd ?? player.currentIndex ?? -1) + 1;
+  Future<void> _replaceTailAfter(int baseIndex, {int? from}) async {
+    final tailStart = from ?? (_queueEnd ?? player.currentIndex ?? -1) + 1;
     if (_activeSequence.length > tailStart) {
       _activeSequence.removeRange(tailStart, _activeSequence.length);
       await player.removeAudioSourceRange(
@@ -299,8 +316,8 @@ class PlayerController extends ChangeNotifier {
         player.audioSources.length,
       );
     }
-    if (baseIndex < songs.length) {
-      final tail = songs.sublist(baseIndex.clamp(0, songs.length));
+    if (baseIndex < _order.length) {
+      final tail = _order.sublist(baseIndex.clamp(0, _order.length));
       _activeSequence.addAll(tail);
       await player.addAudioSources(tail.map(_source).toList(growable: false));
     }
@@ -390,12 +407,8 @@ class PlayerController extends ChangeNotifier {
   void _onIndexChanged(int? index) {
     _trackListening();
     final end = _queueEnd;
-    if (index != null && end != null && index > end) {
+    if (!_rearranging && index != null && end != null && index > end) {
       _clearQueueState();
-      if (_restoreShuffle) {
-        _restoreShuffle = false;
-        unawaited(player.setShuffleModeEnabled(true));
-      }
     }
     notifyListeners();
   }
@@ -429,11 +442,64 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
+  /// Reorders everything around the playing song without interrupting it;
+  /// queued songs still play next.
   Future<void> toggleShuffle() async {
-    final enabled = !player.shuffleModeEnabled;
-    if (enabled) await player.shuffle();
-    await player.setShuffleModeEnabled(enabled);
+    shuffleEnabled = !shuffleEnabled;
+    final current = currentSong;
+    final index = player.currentIndex;
+    if (current == null || index == null) {
+      notifyListeners();
+      return;
+    }
+    final consumed = _consumedCount();
+    // While a queued song plays, the list song that started the queue
+    // stays the point the list continues from.
+    final anchorSong = consumed > 0 && _anchorBaseIndex! >= 0
+        ? _order[_anchorBaseIndex!]
+        : current;
+    _order = shuffleEnabled ? _shuffled(songs, first: anchorSong) : songs;
+    final anchor = _order.indexWhere((song) => song.id == anchorSong.id);
+    final before = [
+      ..._order.take(consumed > 0 ? anchor + 1 : math.max(anchor, 0)),
+      ..._queue.take(math.max(consumed - 1, 0)),
+    ];
+    if (_queueStart != null) {
+      _anchorBaseIndex = anchor;
+      _queueStart = anchor + 1;
+      _queueEnd = anchor + _queue.length;
+    }
+    _activeSequence
+      ..removeRange(0, index)
+      ..insertAll(0, before);
+    _rearranging = true;
+    try {
+      if (index > 0) await player.removeAudioSourceRange(0, index);
+      if (before.isNotEmpty) {
+        await player.insertAudioSources(
+          0,
+          before.map(_source).toList(growable: false),
+        );
+      }
+      await _replaceTailAfter(
+        _queueStart != null ? _resumeIndex() : anchor + 1,
+        // The player may not report the shifted current index yet.
+        from: (_queueEnd ?? before.length) + 1,
+      );
+    } finally {
+      _rearranging = false;
+    }
+    _baseSequence = _queueStart == null && !shuffleEnabled;
+    notifyListeners();
   }
+
+  /// [list] in random order, starting with [first].
+  static List<Song> _shuffled(List<Song> list, {required Song first}) => [
+    first,
+    ...([...list]
+      ..remove(first)
+      ..shuffle()),
+  ];
 
   Future<void> cycleLoopMode() async {
     final next = switch (player.loopMode) {
