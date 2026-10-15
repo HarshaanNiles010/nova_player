@@ -101,6 +101,28 @@ class _MusicHomePageState extends State<MusicHomePage> {
     await _player.setQueueMode(await _settings.loadQueueMode());
     _groupBy = await _settings.loadGroupBy();
     await _loadLibrary();
+    await _restoreQueue();
+  }
+
+  /// Brings back the queue from the last session, then keeps it saved.
+  Future<void> _restoreQueue() async {
+    // Without a library nothing can be matched, and saving would wipe it.
+    if (_songs.isEmpty) return;
+    final byId = {for (final song in _songs) song.id: song};
+    _player.restoreQueue([
+      for (final id in await _settings.loadQueue()) ?byId[id],
+    ]);
+    _player.addListener(_saveQueue);
+  }
+
+  String? _savedQueue;
+
+  void _saveQueue() {
+    final ids = [for (final song in _player.upcomingQueue) song.id];
+    final key = ids.join('\n');
+    if (key == _savedQueue) return;
+    _savedQueue = key;
+    _settings.saveQueue(ids);
   }
 
   Future<void> _loadLibrary() async {

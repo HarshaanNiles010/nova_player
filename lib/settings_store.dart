@@ -6,6 +6,7 @@ import 'queue_mode.dart';
 
 class SettingsStore {
   static const _queueModeKey = 'queue_mode';
+  static const _queueKey = 'queue';
   static const _themeIdKey = 'theme_id';
   static const _themeModeKey = 'theme_mode';
   static const _fontIdKey = 'font_id';
@@ -48,6 +49,17 @@ class SettingsStore {
     );
     return QueueMode.values.where((mode) => mode.name == value).firstOrNull ??
         QueueMode.spotify;
+  }
+
+  /// Song ids still waiting in the queue.
+  Future<List<String>> loadQueue() async =>
+      (await SharedPreferences.getInstance()).getStringList(_queueKey) ?? [];
+
+  Future<void> saveQueue(List<String> songIds) async {
+    await (await SharedPreferences.getInstance()).setStringList(
+      _queueKey,
+      songIds,
+    );
   }
 
   Future<void> saveQueueMode(QueueMode mode) async {

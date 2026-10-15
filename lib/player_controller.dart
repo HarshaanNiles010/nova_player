@@ -67,6 +67,9 @@ class PlayerController extends ChangeNotifier {
   /// that are not mistaken for playback leaving the queue.
   bool _rearranging = false;
 
+  /// Queue saved from the last session, played after the next song started.
+  List<Song> _restoredQueue = const [];
+
   Song? get currentSong {
     if (!_hasSelection) return null;
     final index = player.currentIndex;
@@ -76,6 +79,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   List<Song> get upcomingQueue {
+    if (!_hasSelection) return List.unmodifiable(_restoredQueue);
     if (_queueStart == null || _queue.isEmpty) return const [];
     return List.unmodifiable(_queue.skip(_consumedCount()));
   }
@@ -171,6 +175,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> _startAt(int orderIndex) async {
     // Songs still waiting in the queue play right after the new song.
     final queued = upcomingQueue.toList();
+    _restoredQueue = const [];
     _clearQueueState();
     if (queued.isNotEmpty) {
       await _startWithQueue(orderIndex, queued);
@@ -500,6 +505,13 @@ class PlayerController extends ChangeNotifier {
       ..remove(first)
       ..shuffle()),
   ];
+
+  /// Songs queued in the last session; they play after the next song started.
+  void restoreQueue(List<Song> queued) {
+    if (_hasSelection || queued.isEmpty) return;
+    _restoredQueue = queued;
+    notifyListeners();
+  }
 
   Future<void> cycleLoopMode() async {
     final next = switch (player.loopMode) {
