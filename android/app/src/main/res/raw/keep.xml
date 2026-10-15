@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- audio_service finds its notification icons by name, so the release
+     resource shrinker cannot see they are used. Without them the playback
+     service never goes foreground and Android kills the app in the background. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/audio_service_*" />
