@@ -71,6 +71,29 @@ class PlayerController extends ChangeNotifier {
     return List.unmodifiable(_queue.skip(_consumedCount()));
   }
 
+  /// Sequence indices that play after the current song, in play order
+  /// (shuffled when shuffle is on). Queued songs come first.
+  List<int> get _upNextIndices {
+    final current = player.currentIndex;
+    if (currentSong == null || current == null) return const [];
+    final order = player.effectiveIndices;
+    final at = order.indexOf(current);
+    return at < 0 ? const [] : order.sublist(at + 1);
+  }
+
+  /// Everything that will play after the current song, queued songs first.
+  List<Song> get upNext => [
+    for (final index in _upNextIndices) _activeSequence[index],
+  ];
+
+  /// Jumps straight to [upNext]`[index]`.
+  Future<void> playUpNext(int index) async {
+    final indices = _upNextIndices;
+    if (index < 0 || index >= indices.length) return;
+    await player.seek(Duration.zero, index: indices[index]);
+    unawaited(player.play());
+  }
+
   /// Queued songs already played (or playing) since the queue started.
   int _consumedCount() {
     final start = _queueStart;
