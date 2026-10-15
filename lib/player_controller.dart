@@ -78,7 +78,12 @@ class PlayerController extends ChangeNotifier {
     if (currentSong == null || current == null) return const [];
     final order = player.effectiveIndices;
     final at = order.indexOf(current);
-    return at < 0 ? const [] : order.sublist(at + 1);
+    if (at < 0) return const [];
+    return [
+      ...order.sublist(at + 1),
+      // Repeat all wraps around to the start of the list.
+      if (player.loopMode == LoopMode.all) ...order.sublist(0, at),
+    ];
   }
 
   /// Everything that will play after the current song, queued songs first.
@@ -90,7 +95,20 @@ class PlayerController extends ChangeNotifier {
   Future<void> playUpNext(int index) async {
     final indices = _upNextIndices;
     if (index < 0 || index >= indices.length) return;
-    await player.seek(Duration.zero, index: indices[index]);
+    final queued = upcomingQueue.length;
+    if (index < queued) {
+      // Queued songs above the tapped one stay queued and play after it.
+      await moveUpcoming(index, 0);
+      await player.seek(Duration.zero, index: _queueStart! + _consumedCount());
+    } else if (queued > 0) {
+      // Jumping past the queue keeps it: the queued songs play next.
+      // shortcut: a song listed twice resolves to its first copy, map
+      // sequence positions to list positions if that ever matters.
+      await playAt(songs.indexOf(_activeSequence[indices[index]]));
+      return;
+    } else {
+      await player.seek(Duration.zero, index: indices[index]);
+    }
     unawaited(player.play());
   }
 
@@ -128,8 +146,14 @@ class PlayerController extends ChangeNotifier {
       songs = order;
       _baseSequence = false;
     }
-    // An idle player drops seek(index:), so the first play would start at track 0.
-    if (!_baseSequence || player.processingState == ProcessingState.idle) {
+    // Songs still waiting in the queue play right after the new song.
+    final queued = upcomingQueue.toList();
+    _clearQueueState();
+    if (queued.isNotEmpty) {
+      await _startWithQueue(baseIndex, queued);
+    } else if (!_baseSequence ||
+        // An idle player drops seek(index:), so the first play would start at track 0.
+        player.processingState == ProcessingState.idle) {
       _activeSequence
         ..clear()
         ..addAll(songs);
@@ -141,12 +165,32 @@ class PlayerController extends ChangeNotifier {
     } else {
       await player.seek(Duration.zero, index: baseIndex);
     }
-    _clearQueueState();
     _hasSelection = true;
     _trackListening();
     notifyListeners();
     // just_audio's play future completes only after playback pauses or ends.
     unawaited(player.play());
+  }
+
+  /// Plays [songs] up to [baseIndex], then [queued], then the rest of
+  /// [songs], starting at [baseIndex].
+  Future<void> _startWithQueue(int baseIndex, List<Song> queued) async {
+    _queue.addAll(queued);
+    _anchorBaseIndex = baseIndex;
+    _queueStart = baseIndex + 1;
+    _queueEnd = baseIndex + queued.length;
+    _activeSequence
+      ..clear()
+      ..addAll([
+        ...songs.take(baseIndex + 1),
+        ...queued,
+        ...songs.skip(_resumeIndex()),
+      ]);
+    await player.setAudioSources(
+      _activeSequence.map(_source).toList(growable: false),
+      initialIndex: baseIndex,
+    );
+    _baseSequence = false;
   }
 
   Future<void> addToQueue(Song song) async {
@@ -236,16 +280,15 @@ class PlayerController extends ChangeNotifier {
     final anchor = _anchorBaseIndex;
     final end = _queueEnd;
     if (anchor == null || end == null || _queue.isEmpty) return;
-    final lastQueuedIndex = songs.indexWhere(
-      (song) => song.id == _queue.last.id,
-    );
-    final resumeIndex = queueResumeIndex(
-      mode: queueMode,
-      anchorIndex: anchor,
-      lastQueuedIndex: lastQueuedIndex,
-    );
-    await _replaceTailAfter(resumeIndex);
+    await _replaceTailAfter(_resumeIndex());
   }
+
+  /// Where in [songs] playback continues once the queue is done.
+  int _resumeIndex() => queueResumeIndex(
+    mode: queueMode,
+    anchorIndex: _anchorBaseIndex!,
+    lastQueuedIndex: songs.indexWhere((song) => song.id == _queue.last.id),
+  );
 
   Future<void> _replaceTailAfter(int baseIndex) async {
     final tailStart = (_queueEnd ?? player.currentIndex ?? -1) + 1;
