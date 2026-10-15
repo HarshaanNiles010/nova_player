@@ -21,6 +21,8 @@ int queueResumeIndex({
 }) {
   return switch (mode) {
     QueueMode.spotify => anchorIndex + 1,
-    QueueMode.strawberry => lastQueuedIndex + 1,
+    // A queued song from outside the list continues like Spotify style.
+    QueueMode.strawberry =>
+      lastQueuedIndex < 0 ? anchorIndex + 1 : lastQueuedIndex + 1,
   };
 }
