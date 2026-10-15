@@ -2477,9 +2477,11 @@ class _QueueSheet extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: ListTile(
                       leading: NovaArtwork(song: song, size: 48),
-                      title: const Text(
-                        'PLAYING NOW',
-                        style: TextStyle(
+                      title: Text(
+                        controller.player.loopMode == LoopMode.one
+                            ? 'PLAYING NOW · ON REPEAT'
+                            : 'PLAYING NOW',
+                        style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 1.5,
@@ -2585,7 +2587,8 @@ class _QueueSheet extends StatelessWidget {
     ),
   );
 
-  /// A song in [upNext]; the first one is marked as playing next.
+  /// A song in [upNext]; the first one is marked as playing next, unless
+  /// Repeat One plays the current song again.
   Widget _upNextTile(
     BuildContext context,
     List<Song> upNext,
@@ -2594,16 +2597,15 @@ class _QueueSheet extends StatelessWidget {
   }) {
     final song = upNext[index];
     final colors = Theme.of(context).colorScheme;
+    final isNext = index == 0 && controller.player.loopMode != LoopMode.one;
     return ListTile(
       leading: NovaArtwork(song: song, size: 46),
       title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        index == 0
-            ? 'Next · ${song.artist}'
-            : '${song.artist} · ${song.format}',
+        isNext ? 'Next · ${song.artist}' : '${song.artist} · ${song.format}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: index == 0
+        style: isNext
             ? TextStyle(color: colors.primary, fontWeight: FontWeight.w700)
             : null,
       ),
