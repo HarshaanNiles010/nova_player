@@ -10,6 +10,7 @@ class SettingsStore {
   static const _nowPlayingKey = 'now_playing';
   static const _positionKey = 'position_ms';
   static const _shuffleKey = 'shuffle';
+  static const _hiddenKey = 'hidden_songs';
   static const _themeIdKey = 'theme_id';
   static const _themeModeKey = 'theme_mode';
   static const _fontIdKey = 'font_id';
@@ -78,6 +79,18 @@ class SettingsStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_nowPlayingKey, songId);
     await prefs.setInt(_positionKey, position.inMilliseconds);
+  }
+
+  /// Uris of songs hidden from the library, like extra copies.
+  Future<Set<String>> loadHidden() async =>
+      ((await SharedPreferences.getInstance()).getStringList(_hiddenKey) ?? [])
+          .toSet();
+
+  Future<void> saveHidden(Set<String> uris) async {
+    await (await SharedPreferences.getInstance()).setStringList(
+      _hiddenKey,
+      uris.toList(),
+    );
   }
 
   Future<bool> loadShuffle() async =>

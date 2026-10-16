@@ -8,6 +8,8 @@ import 'package:just_audio/just_audio.dart';
 import 'package:flutter/rendering.dart';
 
 import 'downloads.dart';
+import 'duplicates.dart';
+import 'duplicates_page.dart';
 import 'group_by.dart';
 import 'listening_history.dart';
 import 'lyrics.dart';
@@ -41,6 +43,10 @@ class _MusicHomePageState extends State<MusicHomePage> {
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
   List<Song> _songs = const [];
+
+  /// Every song found, including ones hidden from [_songs].
+  List<Song> _allSongs = const [];
+  Set<String> _hidden = {};
   bool _loading = true;
   String? _error;
   String _query = '';
@@ -103,6 +109,7 @@ class _MusicHomePageState extends State<MusicHomePage> {
     await ListeningHistory.instance.recoverPending();
     await _player.setQueueMode(await _settings.loadQueueMode());
     _groupBy = await _settings.loadGroupBy();
+    _hidden = await _settings.loadHidden();
     await _loadLibrary();
     await _restoreSession();
   }
@@ -170,7 +177,8 @@ class _MusicHomePageState extends State<MusicHomePage> {
       _error = null;
     });
     try {
-      final songs = await _library.loadSongs();
+      _allSongs = await _library.loadSongs();
+      final songs = _shownSongs();
       await _player.setSongs(songs);
       if (!mounted) return;
       setState(() {
@@ -191,6 +199,38 @@ class _MusicHomePageState extends State<MusicHomePage> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  List<Song> _shownSongs() => _hidden.isEmpty
+      ? _allSongs
+      : [
+          for (final song in _allSongs)
+            if (!_hidden.contains(song.uri.toString())) song,
+        ];
+
+  Future<void> _setHidden(List<Song> copies, bool hidden) async {
+    final uris = copies.map((song) => song.uri.toString());
+    hidden ? _hidden.addAll(uris) : _hidden.removeAll(uris);
+    await _settings.saveHidden(_hidden);
+    final songs = _shownSongs();
+    await _player.setSongs(songs);
+    if (!mounted) return;
+    setState(() {
+      _songs = songs;
+      _updatePlayOrder();
+    });
+  }
+
+  void _openDuplicates() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DuplicatesPage(
+          groups: findDuplicates(_allSongs),
+          isHidden: (song) => _hidden.contains(song.uri.toString()),
+          onHide: _setHidden,
+        ),
+      ),
+    );
   }
 
   Future<void> _play(Song song) async {
@@ -227,6 +267,7 @@ class _MusicHomePageState extends State<MusicHomePage> {
             await _player.setQueueMode(mode);
           },
           onReload: _loadLibrary,
+          onFindDuplicates: _openDuplicates,
           songCount: () => _songs.length,
         ),
       ),
@@ -2800,6 +2841,7 @@ class SettingsPage extends StatefulWidget {
     required this.themeController,
     required this.onModeChanged,
     required this.onReload,
+    required this.onFindDuplicates,
     required this.songCount,
   });
 
@@ -2809,6 +2851,7 @@ class SettingsPage extends StatefulWidget {
 
   /// Reloads the library on the home screen.
   final Future<void> Function() onReload;
+  final VoidCallback onFindDuplicates;
   final int Function() songCount;
 
   @override
@@ -2964,6 +3007,13 @@ class _SettingsPageState extends State<SettingsPage> {
                   : 'Find new, moved or deleted songs',
             ),
             onTap: _scanning ? null : _rescan,
+          ),
+          ListTile(
+            leading: const Icon(Icons.content_copy_rounded),
+            title: const Text('Duplicates'),
+            subtitle: const Text('Find the same song in several files'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: widget.onFindDuplicates,
           ),
           ListTile(
             leading: const Icon(Icons.lyrics_outlined),

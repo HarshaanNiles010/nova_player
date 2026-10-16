@@ -40,6 +40,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Adjustable text size.
 
 **Also**
+- A duplicate finder in Settings: the same song in several files (title, artist and length match, ignoring tags like "(Remastered)"), best copy first. Hide the extra copies from the library without deleting anything.
 - Listening stats.
 - Home-screen widgets in two sizes.
 
