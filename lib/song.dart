@@ -11,6 +11,8 @@ class Song {
     this.genre = 'Unknown genre',
     this.year = 'Unknown year',
     this.dateAdded = 0,
+    this.size = 0,
+    this.folder = '',
   });
 
   factory Song.fromMap(Map<String, dynamic> map) {
@@ -34,6 +36,8 @@ class Song {
         _ => 'Unknown year',
       },
       dateAdded: (map['dateAdded'] as num?)?.toInt() ?? 0,
+      size: (map['size'] as num?)?.toInt() ?? 0,
+      folder: map['folder']?.toString() ?? '',
     );
   }
 
@@ -50,6 +54,12 @@ class Song {
 
   /// When the file was added to the phone, in epoch milliseconds (0 if unknown).
   final int dateAdded;
+
+  /// File size in bytes (0 if unknown).
+  final int size;
+
+  /// Folder the file is in, like "Music/Album" ('' if unknown).
+  final String folder;
 
   /// Identifies the song across re-indexing, like [PlayRecord.songKey].
   String get key => fileName.isNotEmpty ? fileName : id;

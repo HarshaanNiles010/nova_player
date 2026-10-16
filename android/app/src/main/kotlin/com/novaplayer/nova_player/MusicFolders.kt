@@ -66,6 +66,9 @@ class MusicFolders(private val context: Context) {
                     "year" to tags.optString("year").take(4).toIntOrNull(),
                     "genre" to tags.optString("genre"),
                     "dateAdded" to modified, // SAF has no added date; last modified is closest
+                    "size" to size,
+                    // Document ids look like "primary:Music/Album/song.flac".
+                    "folder" to docId.substringAfter(':').substringBeforeLast('/', ""),
                     "uri" to key,
                 )
             }
