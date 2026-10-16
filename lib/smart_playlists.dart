@@ -70,7 +70,7 @@ Map<String, List<Song>> songsByGenre(List<Song> library) {
   };
 }
 
-/// Up to 50 of [candidates], best first, ranked by Thompson sampling.
+/// Up to [limit] of [candidates], best first, ranked by Thompson sampling.
 ///
 /// Each song gets a Beta(likes, skips) belief of how likely it is to be
 /// listened through. Finished plays add to likes, skips (a play that did not
@@ -84,6 +84,7 @@ List<Song> genreMix(
   List<PlayRecord> history,
   math.Random random, {
   DateTime? now,
+  int limit = smartPlaylistSize,
 }) {
   const halfLifeDays = 30.0;
   const priorStrength = 4.0;
@@ -131,7 +132,7 @@ List<Song> genreMix(
     for (final (song, _) in scored)
       if (!inSpread.contains(song)) song,
   ];
-  return [...spread, ...rest].take(smartPlaylistSize).toList();
+  return [...spread, ...rest].take(limit).toList();
 }
 
 /// A draw from Beta(a, b), as X / (X + Y) with X ~ Gamma(a), Y ~ Gamma(b).
