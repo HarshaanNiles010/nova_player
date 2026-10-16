@@ -35,6 +35,22 @@ class MusicLibrary {
   /// Has Android re-index all storage; call [loadSongs] afterwards.
   Future<void> rescanStorage() => _channel.invokeMethod<void>('rescanStorage');
 
+  /// Lets the user pick where to save [text]; false when cancelled.
+  Future<bool> saveTextFile(String name, String mimeType, String text) async =>
+      await _channel.invokeMethod<String>('saveTextFile', {
+        'name': name,
+        'mimeType': mimeType,
+        'text': text,
+      }) !=
+      null;
+
+  /// Lets the user pick a file and returns its text; null when cancelled.
+  Future<String?> openTextFile() =>
+      _channel.invokeMethod<String>('openTextFile');
+
+  /// Closes and reopens the app, so restored settings load from scratch.
+  Future<void> restartApp() => _channel.invokeMethod<void>('restartApp');
+
   static final _lyrics = <String, Future<String?>>{};
 
   /// Lyrics text (often LRC): embedded in the file, else a matching .lrc in

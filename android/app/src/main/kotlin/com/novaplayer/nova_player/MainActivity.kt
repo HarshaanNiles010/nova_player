@@ -30,6 +30,8 @@ class MainActivity : AudioServiceActivity() {
     private val lrcFolder by lazy { LrcFolder(this) }
     private val musicFolders by lazy { MusicFolders(this) }
     private var pendingMusicFolderResult: MethodChannel.Result? = null
+    // Backup and playlist files: the result and, when saving, the text to write.
+    private var pendingFile: Pair<MethodChannel.Result, String?>? = null
 
     // Library scans read many files; keep them off the UI thread and in order.
     private val libraryExecutor = Executors.newSingleThreadExecutor()
@@ -69,6 +71,30 @@ class MainActivity : AudioServiceActivity() {
                     result.success(null)
                 }
                 "rescanStorage" -> rescanStorage(result)
+                "saveTextFile" -> pickFile(
+                    Intent(Intent.ACTION_CREATE_DOCUMENT)
+                        .addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType(call.argument<String>("mimeType") ?: "text/plain")
+                        .putExtra(Intent.EXTRA_TITLE, call.argument<String>("name")),
+                    call.argument<String>("text") ?: "",
+                    result
+                )
+                "openTextFile" -> pickFile(
+                    Intent(Intent.ACTION_OPEN_DOCUMENT)
+                        .addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType("*/*"),
+                    null,
+                    result
+                )
+                "restartApp" -> {
+                    // Restored settings are read at start-up, so start fresh.
+                    packageManager.getLaunchIntentForPackage(packageName)?.let {
+                        startActivity(
+                            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        )
+                    }
+                    android.os.Process.killProcess(android.os.Process.myPid())
+                }
                 "updateWidget" -> {
                     NovaWidgets.update(
                         applicationContext,
@@ -151,6 +177,17 @@ class MainActivity : AudioServiceActivity() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), MUSIC_FOLDER_REQUEST)
     }
 
+    /** Opens Android's file picker; saves [text] to the picked file, or reads it when null. */
+    private fun pickFile(intent: Intent, text: String?, result: MethodChannel.Result) {
+        if (pendingFile != null) {
+            result.error("REQUEST_IN_PROGRESS", "File picker already open", null)
+            return
+        }
+        pendingFile = result to text
+        @Suppress("DEPRECATION")
+        startActivityForResult(intent, FILE_REQUEST)
+    }
+
     /** Asks Android's media scanner to re-index every storage volume, then reports back. */
     private fun rescanStorage(result: MethodChannel.Result) {
         val roots = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -175,6 +212,29 @@ class MainActivity : AudioServiceActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == FILE_REQUEST) {
+            val (result, text) = pendingFile ?: return
+            pendingFile = null
+            val uri = data?.data
+            if (resultCode != RESULT_OK || uri == null) {
+                result.success(null) // cancelled
+                return
+            }
+            libraryExecutor.execute {
+                try {
+                    val answer = if (text != null) {
+                        contentResolver.openOutputStream(uri, "wt")!!.use { it.write(text.toByteArray()) }
+                        "saved"
+                    } else {
+                        contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+                    }
+                    runOnUiThread { result.success(answer) }
+                } catch (error: Exception) {
+                    runOnUiThread { result.error("FILE_ERROR", error.message, null) }
+                }
+            }
+            return
+        }
         if (requestCode == MUSIC_FOLDER_REQUEST) {
             val result = pendingMusicFolderResult ?: return
             pendingMusicFolderResult = null
@@ -368,5 +428,6 @@ class MainActivity : AudioServiceActivity() {
         private const val AUDIO_PERMISSION_REQUEST = 1001
         private const val LYRICS_FOLDER_REQUEST = 1002
         private const val MUSIC_FOLDER_REQUEST = 1003
+        private const val FILE_REQUEST = 1004
     }
 }
