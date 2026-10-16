@@ -157,6 +157,7 @@ class PlayerController extends ChangeNotifier {
     await player.setAudioSources(
       value.map(_source).toList(growable: false),
       preload: false,
+      shuffleOrder: _InOrder(),
     );
     notifyListeners();
   }
@@ -207,6 +208,7 @@ class PlayerController extends ChangeNotifier {
         _order.map(_source).toList(growable: false),
         initialIndex: orderIndex,
         initialPosition: position,
+        shuffleOrder: _InOrder(),
       );
       _baseSequence = true;
     } else {
@@ -241,6 +243,7 @@ class PlayerController extends ChangeNotifier {
       _activeSequence.map(_source).toList(growable: false),
       initialIndex: baseIndex,
       initialPosition: position,
+      shuffleOrder: _InOrder(),
     );
     _baseSequence = false;
   }
@@ -610,4 +613,30 @@ class PlayerController extends ChangeNotifier {
     player.dispose();
     super.dispose();
   }
+}
+
+/// Keeps the player's shuffle order the same as its play order. Cars and
+/// Bluetooth devices can turn on the player's own shuffle through the media
+/// session, bypassing [PlayerController.toggleShuffle]; with this order that
+/// changes nothing, so the queue and up next stay right.
+class _InOrder extends ShuffleOrder {
+  @override
+  final List<int> indices = [];
+
+  @override
+  void shuffle({int? initialIndex}) {}
+
+  @override
+  void insert(int index, int count) => _reset(indices.length + count);
+
+  @override
+  void removeRange(int start, int end) =>
+      _reset(indices.length - (end - start));
+
+  @override
+  void clear() => indices.clear();
+
+  void _reset(int length) => indices
+    ..clear()
+    ..addAll(List.generate(length, (i) => i));
 }
