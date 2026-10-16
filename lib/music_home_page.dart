@@ -317,6 +317,8 @@ class _MusicHomePageState extends State<MusicHomePage> {
             _openLibraryPage(AlbumsPage(songs: _songs, player: _player)),
         onArtists: () =>
             _openLibraryPage(ArtistsPage(songs: _songs, player: _player)),
+        onFolders: () =>
+            _openLibraryPage(FoldersPage(songs: _songs, player: _player)),
         onPlaylists: () => _openLibraryPage(PlaylistsPage(player: _player)),
         onSmartPlaylists: () =>
             _openLibraryPage(SmartPlaylistsPage(player: _player)),
@@ -1644,6 +1646,7 @@ class NovaDrawer extends StatelessWidget {
     required this.onTracks,
     required this.onAlbums,
     required this.onArtists,
+    required this.onFolders,
     required this.onPlaylists,
     required this.onSmartPlaylists,
     required this.onStats,
@@ -1654,6 +1657,7 @@ class NovaDrawer extends StatelessWidget {
   final VoidCallback onTracks;
   final VoidCallback onAlbums;
   final VoidCallback onArtists;
+  final VoidCallback onFolders;
   final VoidCallback onPlaylists;
   final VoidCallback onSmartPlaylists;
   final VoidCallback onStats;
@@ -1701,6 +1705,11 @@ class NovaDrawer extends StatelessWidget {
               icon: Icons.person_rounded,
               label: 'Artists',
               onTap: onArtists,
+            ),
+            _DrawerItem(
+              icon: Icons.folder_rounded,
+              label: 'Folders',
+              onTap: onFolders,
             ),
             _DrawerItem(
               icon: Icons.library_music_rounded,
@@ -1796,6 +1805,30 @@ class ArtistsPage extends StatelessWidget {
         final albums = tracks.map((song) => song.album).toSet().length;
         return '$albums ${albums == 1 ? 'album' : 'albums'}';
       },
+    );
+  }
+}
+
+/// Songs by the folder their file is in. Each folder lists only its own
+/// files.
+// shortcut: a flat list of folder paths, not a tree; nest them if libraries
+// with deep folder structures need it.
+class FoldersPage extends StatelessWidget {
+  const FoldersPage({super.key, required this.songs, required this.player});
+
+  final List<Song> songs;
+  final PlayerController player;
+
+  @override
+  Widget build(BuildContext context) {
+    return _GroupedLibraryPage(
+      title: 'Folders',
+      groups: groupSongs(
+        songs,
+        (song) => song.folder.isEmpty ? 'Unknown folder' : song.folder,
+      ),
+      player: player,
+      detail: (tracks) => _trackCount(tracks.length),
     );
   }
 }
