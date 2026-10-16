@@ -156,29 +156,39 @@ class PlayerController extends ChangeNotifier {
   /// Plays [baseIndex] of [order] (default: current [songs]); a new order
   /// becomes the base sequence so next/previous follow what the user sees.
   /// With shuffle on, the rest of the list is shuffled after that song.
-  Future<void> playAt(int baseIndex, {List<Song>? order}) async {
+  /// [autoplay] false loads it paused at [position], to resume a session.
+  Future<void> playAt(
+    int baseIndex, {
+    List<Song>? order,
+    Duration position = Duration.zero,
+    bool autoplay = true,
+  }) async {
     if (order != null && !identical(order, songs)) songs = order;
     if (shuffleEnabled) {
       _order = _shuffled(songs, first: songs[baseIndex]);
       _baseSequence = false;
-      await _startAt(0);
+      await _startAt(0, position: position, autoplay: autoplay);
     } else {
       if (!identical(_order, songs)) {
         _order = songs;
         _baseSequence = false;
       }
-      await _startAt(baseIndex);
+      await _startAt(baseIndex, position: position, autoplay: autoplay);
     }
   }
 
   /// Plays [orderIndex] of [_order], keeping the songs still queued.
-  Future<void> _startAt(int orderIndex) async {
+  Future<void> _startAt(
+    int orderIndex, {
+    Duration position = Duration.zero,
+    bool autoplay = true,
+  }) async {
     // Songs still waiting in the queue play right after the new song.
     final queued = upcomingQueue.toList();
     _restoredQueue = const [];
     _clearQueueState();
     if (queued.isNotEmpty) {
-      await _startWithQueue(orderIndex, queued);
+      await _startWithQueue(orderIndex, queued, position);
     } else if (!_baseSequence ||
         // An idle player drops seek(index:), so the first play would start at track 0.
         player.processingState == ProcessingState.idle) {
@@ -188,21 +198,26 @@ class PlayerController extends ChangeNotifier {
       await player.setAudioSources(
         _order.map(_source).toList(growable: false),
         initialIndex: orderIndex,
+        initialPosition: position,
       );
       _baseSequence = true;
     } else {
-      await player.seek(Duration.zero, index: orderIndex);
+      await player.seek(position, index: orderIndex);
     }
     _hasSelection = true;
     _trackListening();
     notifyListeners();
     // just_audio's play future completes only after playback pauses or ends.
-    unawaited(player.play());
+    if (autoplay) unawaited(player.play());
   }
 
   /// Plays [_order] up to [baseIndex], then [queued], then the rest of
   /// [_order], starting at [baseIndex].
-  Future<void> _startWithQueue(int baseIndex, List<Song> queued) async {
+  Future<void> _startWithQueue(
+    int baseIndex,
+    List<Song> queued,
+    Duration position,
+  ) async {
     _queue.addAll(queued);
     _anchorBaseIndex = baseIndex;
     _queueStart = baseIndex + 1;
@@ -217,6 +232,7 @@ class PlayerController extends ChangeNotifier {
     await player.setAudioSources(
       _activeSequence.map(_source).toList(growable: false),
       initialIndex: baseIndex,
+      initialPosition: position,
     );
     _baseSequence = false;
   }
