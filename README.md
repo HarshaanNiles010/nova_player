@@ -31,6 +31,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
   - the 50 newest songs
   - 50 random songs you have never played
   - a 50-song mix from a genre you pick, ranked by Thompson sampling on your plays and skips
+- Your own smart playlists from rules, for example "Genre has rock, Skips ≤ 0, Added (days ago) ≤ 365". Rules can use genre, artist, album, format, year, plays, skips, when a song was added and when you last played it. The playlist updates as your library and plays change.
 
 **Look and feel**
 - Built-in themes, including ones inspired by Outer Wilds, Rain World, Hollow Knight and Celeste, each with a light, dark or system mode.

@@ -15,6 +15,8 @@ import 'music_library.dart';
 import 'player_controller.dart';
 import 'playlists.dart';
 import 'queue_mode.dart';
+import 'rule_playlist_editor.dart';
+import 'rule_playlists.dart';
 import 'settings_store.dart';
 import 'smart_playlists.dart';
 import 'song.dart';
@@ -2188,10 +2190,60 @@ class SmartPlaylistsPage extends StatelessWidget {
             ),
             onTap: () => _pickGenre(context),
           ),
+          const Divider(height: 32),
+          ListenableBuilder(
+            listenable: RulePlaylistStore.instance,
+            builder: (context, _) => Column(
+              children: [
+                for (final playlist in RulePlaylistStore.instance.playlists)
+                  ListTile(
+                    leading: const Icon(Icons.rule_rounded),
+                    title: Text(playlist.name),
+                    subtitle: Text(
+                      playlist.rules
+                          .map(
+                            (r) => '${r.field.label} ${r.op.label} ${r.value}',
+                          )
+                          .join(', '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => _open(
+                      context,
+                      playlist.name,
+                      (history) =>
+                          applyRules(playlist, library, history, math.Random()),
+                    ),
+                    trailing: PopupMenuButton<bool>(
+                      onSelected: (edit) => edit
+                          ? _edit(context, playlist)
+                          : RulePlaylistStore.instance.delete(playlist.name),
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: true, child: Text('Edit')),
+                        PopupMenuItem(value: false, child: Text('Delete')),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.add_rounded),
+            title: const Text('New smart playlist'),
+            subtitle: const Text('Pick songs with your own rules'),
+            onTap: () => _edit(context, null),
+          ),
         ],
       ),
     );
   }
+
+  void _edit(BuildContext context, RulePlaylist? playlist) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => RulePlaylistEditor(initial: playlist),
+        ),
+      );
 }
 
 /// A generated playlist: shuffle again, or save it to My Playlists.
