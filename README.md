@@ -14,6 +14,8 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 **Playback**
 - Background playback with a media notification and lock-screen controls.
 - Queue with "play next" and "add to queue", shuffle and repeat, in two queue styles (Spotify and Strawberry).
+- The queue sheet on Now Playing shows queued songs and everything after them. Drag to reorder, tap a song to play it now.
+- Queued songs stay put when you shuffle, jump to another song, or close the app.
 - A waveform seek bar on Now Playing.
 - Lyrics from the file's tags or a matching `.lrc` file. Synced lyrics follow the song.
 - In landscape, Now Playing shows the player on the left and lyrics on the right.
@@ -98,7 +100,7 @@ Themes in the "Get more themes" screen come from [`themes/catalog.json`](themes/
 | Path | What it holds |
 | --- | --- |
 | `lib/music_home_page.dart` | Most of the UI: library, Now Playing, playlists, settings |
-| `lib/player_controller.dart` | Playback and the queue (just_audio) |
+| `lib/player_controller.dart`, `lib/queue_mode.dart` | Playback and the queue (just_audio) |
 | `lib/smart_playlists.dart` | Smart playlists and the genre-mix ranking |
 | `lib/theme.dart`, `lib/downloads.dart` | Themes and fonts, plus downloading them |
 | `lib/listening_history.dart`, `lib/stats_page.dart` | Play history and stats |
