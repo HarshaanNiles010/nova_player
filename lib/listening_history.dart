@@ -126,6 +126,17 @@ class ListeningHistory {
     await savePending(null);
   }
 
+  /// The whole log as text, for a backup.
+  Future<String> exportText() async {
+    await _writes;
+    final file = await _logFile();
+    return await file.exists() ? file.readAsString() : '';
+  }
+
+  /// Replaces the log with [text] from a backup.
+  Future<void> importText(String text) =>
+      _enqueue(() async => (await _logFile()).writeAsString(text, flush: true));
+
   Future<List<PlayRecord>> load() async {
     await _writes;
     final file = await _logFile();
