@@ -23,6 +23,9 @@ class PlayerController extends ChangeNotifier {
       player.positionDiscontinuityStream.listen((event) {
         if (event.reason == PositionDiscontinuityReason.autoAdvance) {
           _trackListening(restart: true);
+          // Not from inside the player's own event: pause() would wait
+          // on a stream that cannot fire until this callback returns.
+          if (_sleepAfterSong) Timer.run(_sleepNow);
         }
       }),
       player.loopModeStream.listen((_) => notifyListeners()),
@@ -69,6 +72,11 @@ class PlayerController extends ChangeNotifier {
 
   /// Queue saved from the last session, played after the next song started.
   List<Song> _restoredQueue = const [];
+
+  DateTime? _sleepAt;
+  bool _sleepAfterSong = false;
+  Timer? _sleepTicker;
+  static const _sleepFade = Duration(seconds: 10);
 
   Song? get currentSong {
     if (!_hasSelection) return null;
@@ -529,6 +537,59 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get sleepTimerOn => _sleepTicker != null;
+
+  /// Time left before the sleep timer pauses playback.
+  Duration? get sleepRemaining {
+    if (_sleepAfterSong) {
+      final duration = player.duration;
+      return duration == null ? null : duration - player.position;
+    }
+    return _sleepAt?.difference(DateTime.now());
+  }
+
+  /// Pauses after [after], or at the end of the playing song when null.
+  void setSleepTimer(Duration? after) {
+    _sleepTicker?.cancel();
+    _sleepAt = after == null ? null : DateTime.now().add(after);
+    _sleepAfterSong = after == null;
+    _sleepTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      final left = sleepRemaining;
+      // The list ran out first: nothing left to pause.
+      if (player.processingState == ProcessingState.completed) {
+        cancelSleepTimer();
+        return;
+      }
+      if (left == null) return;
+      if (!_sleepAfterSong && left <= Duration.zero) {
+        unawaited(_sleepNow());
+        return;
+      }
+      // Fades out over the last seconds; quiet while paused is harmless.
+      final volume = left < _sleepFade
+          ? left.inMilliseconds / _sleepFade.inMilliseconds
+          : 1.0;
+      unawaited(player.setVolume(volume.clamp(0.0, 1.0)));
+      notifyListeners();
+    });
+    notifyListeners();
+  }
+
+  void cancelSleepTimer() {
+    _sleepTicker?.cancel();
+    _sleepTicker = null;
+    _sleepAt = null;
+    _sleepAfterSong = false;
+    unawaited(player.setVolume(1));
+    notifyListeners();
+  }
+
+  Future<void> _sleepNow() async {
+    await player.pause();
+    // After pausing, so the volume coming back is not heard.
+    cancelSleepTimer();
+  }
+
   Future<void> cycleLoopMode() async {
     final next = switch (player.loopMode) {
       LoopMode.off => LoopMode.all,
@@ -541,6 +602,7 @@ class PlayerController extends ChangeNotifier {
   @override
   void dispose() {
     _checkpoint.cancel();
+    _sleepTicker?.cancel();
     _endListening();
     for (final subscription in _subscriptions) {
       subscription.cancel();

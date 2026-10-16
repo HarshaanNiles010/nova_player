@@ -17,6 +17,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - The queue sheet on Now Playing shows queued songs and everything after them. Drag to reorder, tap a song to play it now.
 - Queued songs stay put when you shuffle, jump to another song, or close the app.
 - Reopening the app brings back the last song, paused where you left it, with shuffle as you left it.
+- Sleep timer: pause after 15 to 60 minutes or at the end of the song, fading out over the last 10 seconds.
 - A waveform seek bar on Now Playing.
 - Lyrics from the file's tags or a matching `.lrc` file. Synced lyrics follow the song.
 - In landscape, Now Playing shows the player on the left and lyrics on the right.

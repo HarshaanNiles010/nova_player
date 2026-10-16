@@ -1151,6 +1151,19 @@ class NowPlayingPage extends StatelessWidget {
               ),
               centerTitle: true,
               actions: [
+                if (controller.sleepRemaining case final left?
+                    when controller.sleepTimerOn)
+                  TextButton.icon(
+                    onPressed: () => _showSleepSheet(context, controller),
+                    icon: const Icon(Icons.bedtime_rounded, size: 18),
+                    label: Text(_clockLabel(left)),
+                  )
+                else
+                  IconButton(
+                    tooltip: 'Sleep timer',
+                    onPressed: () => _showSleepSheet(context, controller),
+                    icon: const Icon(Icons.bedtime_outlined),
+                  ),
                 IconButton(
                   tooltip: 'Queue',
                   onPressed: () => showQueueSheet(context, controller),
@@ -2481,6 +2494,59 @@ Future<String?> _askPlaylistName(
           child: Text(action),
         ),
       ],
+    ),
+  );
+}
+
+/// m:ss, or h:mm:ss from an hour up.
+String _clockLabel(Duration time) {
+  final seconds = math.max(time.inSeconds, 0);
+  String two(int value) => value.toString().padLeft(2, '0');
+  final minutes = seconds ~/ 60;
+  return minutes >= 60
+      ? '${minutes ~/ 60}:${two(minutes % 60)}:${two(seconds % 60)}'
+      : '$minutes:${two(seconds % 60)}';
+}
+
+Future<void> _showSleepSheet(
+  BuildContext context,
+  PlayerController controller,
+) {
+  void choose(BuildContext sheet, Duration? after) {
+    controller.setSleepTimer(after);
+    Navigator.pop(sheet);
+  }
+
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheet) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const ListTile(title: Text('Pause playback after')),
+          for (final minutes in const [15, 30, 45, 60])
+            ListTile(
+              leading: const Icon(Icons.timer_outlined),
+              title: Text('$minutes minutes'),
+              onTap: () => choose(sheet, Duration(minutes: minutes)),
+            ),
+          ListTile(
+            leading: const Icon(Icons.music_off_outlined),
+            title: const Text('End of this song'),
+            onTap: () => choose(sheet, null),
+          ),
+          if (controller.sleepTimerOn)
+            ListTile(
+              leading: const Icon(Icons.close_rounded),
+              title: const Text('Turn off timer'),
+              onTap: () {
+                controller.cancelSleepTimer();
+                Navigator.pop(sheet);
+              },
+            ),
+        ],
+      ),
     ),
   );
 }
