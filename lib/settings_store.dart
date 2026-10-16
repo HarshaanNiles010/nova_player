@@ -7,6 +7,9 @@ import 'queue_mode.dart';
 class SettingsStore {
   static const _queueModeKey = 'queue_mode';
   static const _queueKey = 'queue';
+  static const _nowPlayingKey = 'now_playing';
+  static const _positionKey = 'position_ms';
+  static const _shuffleKey = 'shuffle';
   static const _themeIdKey = 'theme_id';
   static const _themeModeKey = 'theme_mode';
   static const _fontIdKey = 'font_id';
@@ -60,6 +63,28 @@ class SettingsStore {
       _queueKey,
       songIds,
     );
+  }
+
+  /// The song that was playing and how far into it, from the last session.
+  Future<(String?, Duration)> loadNowPlaying() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (
+      prefs.getString(_nowPlayingKey),
+      Duration(milliseconds: prefs.getInt(_positionKey) ?? 0),
+    );
+  }
+
+  Future<void> saveNowPlaying(String songId, Duration position) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_nowPlayingKey, songId);
+    await prefs.setInt(_positionKey, position.inMilliseconds);
+  }
+
+  Future<bool> loadShuffle() async =>
+      (await SharedPreferences.getInstance()).getBool(_shuffleKey) ?? false;
+
+  Future<void> saveShuffle(bool enabled) async {
+    await (await SharedPreferences.getInstance()).setBool(_shuffleKey, enabled);
   }
 
   Future<void> saveQueueMode(QueueMode mode) async {

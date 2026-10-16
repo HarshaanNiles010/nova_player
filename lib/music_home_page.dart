@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -101,28 +102,64 @@ class _MusicHomePageState extends State<MusicHomePage> {
     await _player.setQueueMode(await _settings.loadQueueMode());
     _groupBy = await _settings.loadGroupBy();
     await _loadLibrary();
-    await _restoreQueue();
+    await _restoreSession();
   }
 
-  /// Brings back the queue from the last session, then keeps it saved.
-  Future<void> _restoreQueue() async {
+  /// Brings back the queue, shuffle and the paused song from the last
+  /// session, then keeps them saved.
+  Future<void> _restoreSession() async {
     // Without a library nothing can be matched, and saving would wipe it.
     if (_songs.isEmpty) return;
     final byId = {for (final song in _songs) song.id: song};
+    _player.shuffleEnabled = await _settings.loadShuffle();
     _player.restoreQueue([
       for (final id in await _settings.loadQueue()) ?byId[id],
     ]);
-    _player.addListener(_saveQueue);
+    final (id, position) = await _settings.loadNowPlaying();
+    // shortcut: resumes within the whole library, not the album or playlist
+    // it was played from; save that list too if it matters.
+    if (byId[id] case final song?) {
+      try {
+        await _player.playAt(
+          _playOrder.indexOf(song),
+          order: _playOrder,
+          position: position,
+          autoplay: false,
+        );
+      } catch (_) {
+        // The file may be gone or unreadable; start fresh instead.
+      }
+    }
+    _player.addListener(_saveSession);
+    _positionSaver = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (_player.player.playing) _savePosition();
+    });
   }
 
   String? _savedQueue;
+  String? _savedState;
+  Timer? _positionSaver;
 
-  void _saveQueue() {
+  void _saveSession() {
     final ids = [for (final song in _player.upcomingQueue) song.id];
     final key = ids.join('\n');
-    if (key == _savedQueue) return;
-    _savedQueue = key;
-    _settings.saveQueue(ids);
+    if (key != _savedQueue) {
+      _savedQueue = key;
+      _settings.saveQueue(ids);
+    }
+    final state =
+        '${_player.currentSong?.id}/${_player.player.playing}/'
+        '${_player.shuffleEnabled}';
+    if (state == _savedState) return;
+    _savedState = state;
+    _settings.saveShuffle(_player.shuffleEnabled);
+    _savePosition();
+  }
+
+  void _savePosition() {
+    if (_player.currentSong case final song?) {
+      _settings.saveNowPlaying(song.id, _player.player.position);
+    }
   }
 
   Future<void> _loadLibrary() async {
@@ -220,6 +257,7 @@ class _MusicHomePageState extends State<MusicHomePage> {
 
   @override
   void dispose() {
+    _positionSaver?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
     _player.dispose();
