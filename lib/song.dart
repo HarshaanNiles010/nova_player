@@ -13,6 +13,7 @@ class Song {
     this.dateAdded = 0,
     this.size = 0,
     this.folder = '',
+    this.path = '',
   });
 
   factory Song.fromMap(Map<String, dynamic> map) {
@@ -38,6 +39,7 @@ class Song {
       dateAdded: (map['dateAdded'] as num?)?.toInt() ?? 0,
       size: (map['size'] as num?)?.toInt() ?? 0,
       folder: map['folder']?.toString() ?? '',
+      path: map['path']?.toString() ?? '',
     );
   }
 
@@ -60,6 +62,10 @@ class Song {
 
   /// Folder the file is in, like "Music/Album" ('' if unknown).
   final String folder;
+
+  /// Full file path, like "/storage/3738-3432/Music/song.flac" ('' if
+  /// unknown).
+  final String path;
 
   /// Identifies the song across re-indexing, like [PlayRecord.songKey].
   String get key => fileName.isNotEmpty ? fileName : id;

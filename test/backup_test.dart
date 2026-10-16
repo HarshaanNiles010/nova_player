@@ -3,7 +3,7 @@ import 'package:nova_player/backup.dart';
 import 'package:nova_player/m3u.dart';
 import 'package:nova_player/song.dart';
 
-Song song(String file, {String folder = 'Music/Album'}) => Song(
+Song song(String file) => Song(
   id: file,
   title: 'Title $file',
   artist: 'Artist',
@@ -12,7 +12,7 @@ Song song(String file, {String folder = 'Music/Album'}) => Song(
   uri: Uri.parse('content://$file'),
   fileName: file,
   mimeType: '',
-  folder: folder,
+  path: '/storage/3738-3432/Music/$file',
 );
 
 void main() {
@@ -53,7 +53,7 @@ void main() {
     final library = [song('a.flac'), song('b.mp3'), song('100% Love.mp3')];
     final text = toM3u([library[1], library[0], library[2]]);
     expect(text, contains('#EXTINF:61,Artist - Title b.mp3'));
-    expect(text, contains('/storage/emulated/0/Music/Album/b.mp3'));
+    expect(text, contains('/storage/3738-3432/Music/b.mp3'));
     expect(fromM3u(text, library), [library[1], library[0], library[2]]);
     expect(fromM3u('C:\\Music\\A.FLAC\r\nmissing.mp3\n#comment\n', library), [
       library[0],

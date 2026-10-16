@@ -67,8 +67,13 @@ class MusicFolders(private val context: Context) {
                     "genre" to tags.optString("genre"),
                     "dateAdded" to modified, // SAF has no added date; last modified is closest
                     "size" to size,
-                    // Document ids look like "primary:Music/Album/song.flac".
+                    // Document ids look like "primary:Music/Album/song.flac"
+                    // or "3738-3432:Music/song.flac" for an SD card.
                     "folder" to docId.substringAfter(':').substringBeforeLast('/', ""),
+                    "path" to docId.substringBefore(':').let { volume ->
+                        val root = if (volume == "primary") "/storage/emulated/0" else "/storage/$volume"
+                        "$root/${docId.substringAfter(':')}"
+                    },
                     "uri" to key,
                 )
             }

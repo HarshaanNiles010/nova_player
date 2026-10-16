@@ -1,19 +1,12 @@
 import 'song.dart';
 
 /// [songs] as an extended M3U playlist other players can open.
-// shortcut: paths assume the phone's main storage; songs on an SD card get
-// the wrong volume. Nova itself imports by file name, so this only affects
-// other players.
 String toM3u(List<Song> songs) {
   final lines = ['#EXTM3U'];
   for (final song in songs) {
     lines
       ..add('#EXTINF:${song.duration.inSeconds},${song.artist} - ${song.title}')
-      ..add(
-        song.folder.isEmpty
-            ? song.fileName
-            : '/storage/emulated/0/${song.folder}/${song.fileName}',
-      );
+      ..add(song.path.isEmpty ? song.fileName : song.path);
   }
   return '${lines.join('\n')}\n';
 }

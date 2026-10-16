@@ -352,11 +352,12 @@ class MainActivity : AudioServiceActivity() {
         // The genre column only exists on Android 11+.
         val hasGenre = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
         if (hasGenre) projection += MediaStore.Audio.Media.GENRE
-        // Folder of the file: RELATIVE_PATH from Android 10, the file path before.
-        val hasRelativePath = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        // The file path (deprecated for writing, still filled in for reading),
+        // and its folder: RELATIVE_PATH from Android 10, else from the path.
         @Suppress("DEPRECATION")
-        projection += if (hasRelativePath) MediaStore.Audio.Media.RELATIVE_PATH
-            else MediaStore.Audio.Media.DATA
+        projection += MediaStore.Audio.Media.DATA
+        val hasRelativePath = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        if (hasRelativePath) projection += MediaStore.Audio.Media.RELATIVE_PATH
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND " +
             "${MediaStore.Audio.Media.DURATION} > 0"
 
@@ -383,7 +384,10 @@ class MainActivity : AudioServiceActivity() {
                 val addedIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
                 val genreIndex =
                     if (hasGenre) cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.GENRE) else -1
-                val folderIndex = cursor.getColumnIndexOrThrow(projection.last())
+                @Suppress("DEPRECATION")
+                val pathIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+                val relativePathIndex =
+                    if (hasRelativePath) cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.RELATIVE_PATH) else -1
 
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idIndex)
@@ -400,8 +404,11 @@ class MainActivity : AudioServiceActivity() {
                         "genre" to if (genreIndex >= 0) cursor.getString(genreIndex) else null,
                         "dateAdded" to cursor.getLong(addedIndex) * 1000, // seconds to ms
                         "size" to cursor.getLong(sizeIndex),
-                        "folder" to (cursor.getString(folderIndex) ?: "").let {
-                            if (hasRelativePath) it.trimEnd('/') else it.substringBeforeLast('/')
+                        "path" to cursor.getString(pathIndex),
+                        "folder" to if (relativePathIndex >= 0) {
+                            (cursor.getString(relativePathIndex) ?: "").trimEnd('/')
+                        } else {
+                            (cursor.getString(pathIndex) ?: "").substringBeforeLast('/', "")
                         },
                         "uri" to ContentUris.withAppendedId(
                             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
