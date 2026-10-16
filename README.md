@@ -9,6 +9,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 **Library**
 - Finds every song Android has indexed, plus extra folders you add (for example folders with a `.nomedia` file).
 - Search by title, artist or album, group by artist, album, genre, year or format, and fast-scroll long lists.
+- Browse by folder.
 - Album art, with album and artist pages. Tap the artist or album name on Now Playing to open them.
 
 **Playback**
@@ -25,6 +26,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 
 **Playlists**
 - Make your own playlists and drag songs into any order.
+- Export a playlist as `.m3u`, or import one from another player (songs are matched by file name).
 - A heart on Now Playing adds the song to Favourites.
 - Smart playlists:
   - the last 50 songs played
@@ -40,6 +42,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Adjustable text size.
 
 **Also**
+- Back up playlists, smart playlists, favourites, settings and listening stats to one file, and restore them on a new phone or after a reinstall.
 - A duplicate finder in Settings: the same song in several files (title, artist and length match, ignoring tags like "(Remastered)"), best copy first. Hide the extra copies from the library without deleting anything.
 - Listening stats.
 - Home-screen widgets in two sizes.

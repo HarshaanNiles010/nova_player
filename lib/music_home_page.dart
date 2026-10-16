@@ -7,12 +7,14 @@ import 'package:just_audio/just_audio.dart';
 
 import 'package:flutter/rendering.dart';
 
+import 'backup.dart';
 import 'downloads.dart';
 import 'duplicates.dart';
 import 'duplicates_page.dart';
 import 'group_by.dart';
 import 'listening_history.dart';
 import 'lyrics.dart';
+import 'm3u.dart';
 import 'music_library.dart';
 import 'player_controller.dart';
 import 'playlists.dart';
@@ -2101,11 +2103,64 @@ class PlaylistsPage extends StatelessWidget {
     if (delete == true) await PlaylistStore.instance.delete(name);
   }
 
+  void _say(BuildContext context, String message) =>
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(message)));
+
+  Future<void> _export(
+    BuildContext context,
+    String name,
+    List<Song> songs,
+  ) async {
+    try {
+      final saved = await MusicLibrary().saveTextFile(
+        '$name.m3u',
+        'audio/x-mpegurl',
+        toM3u(songs),
+      );
+      if (saved && context.mounted) _say(context, 'Saved $name.m3u');
+    } catch (_) {
+      if (context.mounted) _say(context, 'The playlist could not be saved.');
+    }
+  }
+
+  Future<void> _import(BuildContext context) async {
+    final String? text;
+    try {
+      text = await MusicLibrary().openTextFile();
+    } catch (_) {
+      if (context.mounted) _say(context, 'The file could not be read.');
+      return;
+    }
+    if (text == null || !context.mounted) return;
+    final songs = fromM3u(text, player.library);
+    if (songs.isEmpty) {
+      _say(context, 'None of the songs in that file are on this phone.');
+      return;
+    }
+    final name = await _askPlaylistName(context, action: 'Import');
+    if (name == null || name.isEmpty) return;
+    await PlaylistStore.instance.replace(name, songs);
+    if (context.mounted) {
+      _say(context, 'Imported ${_trackCount(songs.length)} as $name');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = PlaylistStore.instance;
     return Scaffold(
-      appBar: AppBar(title: const Text('My Playlists')),
+      appBar: AppBar(
+        title: const Text('My Playlists'),
+        actions: [
+          IconButton(
+            tooltip: 'Import .m3u playlist',
+            onPressed: () => _import(context),
+            icon: const Icon(Icons.file_open_outlined),
+          ),
+        ],
+      ),
       body: ListenableBuilder(
         listenable: store,
         builder: (context, _) {
@@ -2158,6 +2213,13 @@ class PlaylistsPage extends StatelessWidget {
                             songs: songs,
                             player: player,
                             playlist: name,
+                            actions: [
+                              IconButton(
+                                tooltip: 'Export as .m3u',
+                                onPressed: () => _export(context, name, songs),
+                                icon: const Icon(Icons.ios_share_rounded),
+                              ),
+                            ],
                           );
                         },
                       ),
@@ -2934,6 +2996,54 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _backUp() async {
+    try {
+      final day = DateTime.now().toIso8601String().substring(0, 10);
+      final saved = await MusicLibrary().saveTextFile(
+        'nova-backup-$day.json',
+        'application/json',
+        await createBackup(),
+      );
+      if (saved) _notify('Backup saved');
+    } catch (_) {
+      _notify('The backup could not be saved.');
+    }
+  }
+
+  Future<void> _restore() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Restore a backup?'),
+        content: const Text(
+          'Your playlists, settings and listening history are replaced by '
+          'the backup, then Nova restarts.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Pick backup'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final text = await MusicLibrary().openTextFile();
+      if (text == null) return;
+      await restoreBackup(text);
+      await MusicLibrary().restartApp();
+    } on FormatException {
+      _notify('That file is not a Nova backup. Nothing was changed.');
+    } catch (_) {
+      _notify('The backup could not be read.');
+    }
+  }
+
   void _notify(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -3040,6 +3150,20 @@ class _SettingsPageState extends State<SettingsPage> {
                   : 'Find new, moved or deleted songs',
             ),
             onTap: _scanning ? null : _rescan,
+          ),
+          ListTile(
+            leading: const Icon(Icons.save_alt_rounded),
+            title: const Text('Back up'),
+            subtitle: const Text(
+              'Save playlists, settings and stats to a file',
+            ),
+            onTap: _backUp,
+          ),
+          ListTile(
+            leading: const Icon(Icons.settings_backup_restore_rounded),
+            title: const Text('Restore backup'),
+            subtitle: const Text('Replace everything with a saved backup'),
+            onTap: _restore,
           ),
           ListTile(
             leading: const Icon(Icons.content_copy_rounded),
