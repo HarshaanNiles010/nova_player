@@ -47,6 +47,10 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Listening stats.
 - Home-screen widgets in two sizes.
 
+## Download
+
+Android: get the APK from the [latest release](https://github.com/HarshaanNiles010/nova_player/releases/latest) and open it on your phone. There is no iPhone download; see [iPhone](#iphone) to build it yourself.
+
 ## Requirements
 
 - Flutter with Dart 3.13.5 or newer (built with Flutter 3.47)
