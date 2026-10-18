@@ -1,6 +1,6 @@
 # Nova Player
 
-A local music player for Android, built with Flutter. It plays the music files already on your phone: no accounts, no streaming, no ads.
+A local music player for Android and iPhone, built with Flutter. It plays the music files already on your phone: no accounts, no streaming, no ads.
 
 This is a vibe coded app made for myself. If you want to use the code to make your own player, go for it.
 
@@ -50,7 +50,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 ## Requirements
 
 - Flutter with Dart 3.13.5 or newer (built with Flutter 3.47)
-- Android 7.0 (API 24) or newer. Android only for now; there is no iOS build.
+- Android 7.0 (API 24) or newer, or iOS 15 or newer (iPhone builds need Xcode).
 
 ## Run it
 
@@ -62,6 +62,27 @@ flutter run
 ```
 
 Grant the music permission when the app asks, so it can read your library.
+
+## iPhone
+
+iPhone apps cannot read the whole phone, so Nova on iOS plays:
+- audio files you copy into the app (Finder → your iPhone → Files → Nova Player, or the Files app);
+- folders you pick in Settings → Music folders (On My iPhone, iCloud Drive or a USB drive). iCloud songs must be downloaded to the phone first.
+
+The Apple Music library is not used. Ogg and Opus files are skipped, since iOS cannot play them. Widgets, the lyrics folder picker and rescanning are Android only; lyrics come from tags or a `.lrc` file next to the song. Restoring a backup closes the app; open it again to load the restored settings.
+
+To install on your own iPhone:
+1. Install Xcode, then run `sudo xcode-select -s /Applications/Xcode.app` and `sudo xcodebuild -runFirstLaunch`.
+2. Open `ios/Runner.xcworkspace`, select the Runner target, and set your team under Signing & Capabilities (a free Apple ID works; change the bundle identifier if Xcode says it is taken).
+3. Turn on Developer Mode on the iPhone (Settings → Privacy & Security), then build and install:
+   ```sh
+   flutter build ios --release
+   xcrun devicectl device install app --device <UDID> build/ios/iphoneos/Runner.app
+   ```
+   `xcrun devicectl list devices` shows the UDID.
+4. On the iPhone, trust your profile under Settings → General → VPN & Device Management.
+
+With a free Apple ID the app stops opening after 7 days; build and install again to renew it.
 
 ## Release build
 
@@ -113,6 +134,7 @@ Themes in the "Get more themes" screen come from [`themes/catalog.json`](themes/
 | `lib/theme.dart`, `lib/downloads.dart` | Themes and fonts, plus downloading them |
 | `lib/listening_history.dart`, `lib/stats_page.dart` | Play history and stats |
 | `android/app/src/main/kotlin/` | MediaStore scanning, extra folders, lyrics files and widgets |
+| `ios/Runner/AppDelegate.swift` | iPhone library scan, picked folders, artwork, lyrics and file picker |
 | `themes/catalog.json` | Downloadable themes |
 | `tool/make_icon.py` | Generates the launcher icon |
 
