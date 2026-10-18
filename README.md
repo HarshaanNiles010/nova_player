@@ -71,6 +71,8 @@ iPhone apps cannot read the whole phone, so Nova on iOS plays:
 
 The Apple Music library is not used. Ogg and Opus files are skipped, since iOS cannot play them. Widgets, the lyrics folder picker and rescanning are Android only; lyrics come from tags or a `.lrc` file next to the song. Restoring a backup closes the app; open it again to load the restored settings.
 
+To keep playing and queueing fast, the iPhone player loads 40 songs around the one playing and adds more as it goes. So "Up next" shows about the next 40 songs, and going back with previous or repeat-all reaches at most 40 songs before where you started playing.
+
 To install on your own iPhone:
 1. Install Xcode, then run `sudo xcode-select -s /Applications/Xcode.app` and `sudo xcodebuild -runFirstLaunch`.
 2. Open `ios/Runner.xcworkspace`, select the Runner target, and set your team under Signing & Capabilities (a free Apple ID works; change the bundle identifier if Xcode says it is taken).
