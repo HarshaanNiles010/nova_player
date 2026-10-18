@@ -70,6 +70,17 @@ class PlayerController extends ChangeNotifier {
   /// that are not mistaken for playback leaving the queue.
   bool _rearranging = false;
 
+  /// iOS sets up every song handed to its player at once, which makes each
+  /// play or queue change take seconds with a big list. There the player
+  /// holds a window of [_order] around the playing song, extended as
+  /// playback nears its end; elsewhere it holds all of it.
+  static final int? _window = defaultTargetPlatform == TargetPlatform.iOS
+      ? 40
+      : null;
+
+  /// [_order] songs from here on are not in the player yet.
+  int _loadedEnd = 0;
+
   /// Queue saved from the last session, played after the next song started.
   List<Song> _restoredQueue = const [];
 
@@ -153,9 +164,9 @@ class PlayerController extends ChangeNotifier {
     _order = value;
     _activeSequence
       ..clear()
-      ..addAll(value);
+      ..addAll(_orderSlice(0, 0));
     await player.setAudioSources(
-      value.map(_source).toList(growable: false),
+      _activeSequence.map(_source).toList(growable: false),
       preload: false,
       shuffleOrder: _InOrder(),
     );
@@ -196,16 +207,20 @@ class PlayerController extends ChangeNotifier {
     final queued = upcomingQueue.toList();
     _restoredQueue = const [];
     _clearQueueState();
+    final reload =
+        !_baseSequence ||
+        // An idle player drops seek(index:), so the first play would start at track 0.
+        player.processingState == ProcessingState.idle ||
+        orderIndex >= _activeSequence.length;
+    if (queued.isNotEmpty || reload) orderIndex = _rebase(orderIndex);
     if (queued.isNotEmpty) {
       await _startWithQueue(orderIndex, queued, position);
-    } else if (!_baseSequence ||
-        // An idle player drops seek(index:), so the first play would start at track 0.
-        player.processingState == ProcessingState.idle) {
+    } else if (reload) {
       _activeSequence
         ..clear()
-        ..addAll(_order);
+        ..addAll(_orderSlice(0, orderIndex));
       await player.setAudioSources(
-        _order.map(_source).toList(growable: false),
+        _activeSequence.map(_source).toList(growable: false),
         initialIndex: orderIndex,
         initialPosition: position,
         shuffleOrder: _InOrder(),
@@ -232,12 +247,13 @@ class PlayerController extends ChangeNotifier {
     _anchorBaseIndex = baseIndex;
     _queueStart = baseIndex + 1;
     _queueEnd = baseIndex + queued.length;
+    final resume = _resumeIndex();
     _activeSequence
       ..clear()
       ..addAll([
         ..._order.take(baseIndex + 1),
         ...queued,
-        ..._order.skip(_resumeIndex()),
+        ..._orderSlice(resume, resume),
       ]);
     await player.setAudioSources(
       _activeSequence.map(_source).toList(growable: false),
@@ -349,10 +365,39 @@ class PlayerController extends ChangeNotifier {
       );
     }
     if (baseIndex < _order.length) {
-      final tail = _order.sublist(baseIndex.clamp(0, _order.length));
+      final tail = _orderSlice(baseIndex, baseIndex);
       _activeSequence.addAll(tail);
       await player.addAudioSources(tail.map(_source).toList(growable: false));
     }
+  }
+
+  /// [_order] from [from] through [last] plus a window after it, marking
+  /// the end as loaded.
+  List<Song> _orderSlice(int from, int last) {
+    final window = _window;
+    _loadedEnd = window == null
+        ? _order.length
+        : math.min(_order.length, last + 1 + window);
+    return _order.sublist(from.clamp(0, _loadedEnd), _loadedEnd);
+  }
+
+  /// Drops [_order] songs more than a window before [index], so the player
+  /// is not handed them; returns [index]'s new position.
+  // shortcut: previous and repeat-all reach back at most a window from where
+  // playback started, keep an offset into the full list if that matters.
+  int _rebase(int index) {
+    final window = _window;
+    if (window == null || index <= window) return index;
+    _order = _order.sublist(index - window);
+    return window;
+  }
+
+  /// Adds the next window of [_order] once playback nears the loaded end.
+  Future<void> _loadMore() async {
+    final more = _orderSlice(_loadedEnd, _loadedEnd - 1);
+    _activeSequence.addAll(more);
+    await player.addAudioSources(more.map(_source).toList(growable: false));
+    notifyListeners();
   }
 
   AudioSource _source(Song song) {
@@ -438,6 +483,12 @@ class PlayerController extends ChangeNotifier {
 
   void _onIndexChanged(int? index) {
     _trackListening();
+    if (!_rearranging &&
+        index != null &&
+        index >= _activeSequence.length - 3 &&
+        _loadedEnd < _order.length) {
+      unawaited(_loadMore());
+    }
     final end = _queueEnd;
     if (!_rearranging && index != null && end != null && index > end) {
       _clearQueueState();
@@ -491,7 +542,9 @@ class PlayerController extends ChangeNotifier {
         ? _order[_anchorBaseIndex!]
         : current;
     _order = shuffleEnabled ? _shuffled(songs, first: anchorSong) : songs;
-    final anchor = _order.indexWhere((song) => song.id == anchorSong.id);
+    final anchor = _rebase(
+      _order.indexWhere((song) => song.id == anchorSong.id),
+    );
     final before = [
       ..._order.take(consumed > 0 ? anchor + 1 : math.max(anchor, 0)),
       ..._queue.take(math.max(consumed - 1, 0)),
@@ -521,7 +574,8 @@ class PlayerController extends ChangeNotifier {
     } finally {
       _rearranging = false;
     }
-    _baseSequence = _queueStart == null && !shuffleEnabled;
+    _baseSequence =
+        _queueStart == null && !shuffleEnabled && identical(_order, songs);
     notifyListeners();
   }
 
