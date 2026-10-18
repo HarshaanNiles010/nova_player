@@ -489,8 +489,10 @@ class _MusicHomePageState extends State<MusicHomePage> {
           child: _LibraryMessage(
             icon: Icons.sd_storage_rounded,
             title: 'No music found',
-            message:
-                'Add audio files to your phone or memory card, then refresh.',
+            message: Theme.of(context).platform == TargetPlatform.iOS
+                ? 'Copy audio files into Nova Player with Finder or the '
+                      'Files app, then refresh.'
+                : 'Add audio files to your phone or memory card, then refresh.',
             actionLabel: 'Refresh',
             onAction: _loadLibrary,
           ),
