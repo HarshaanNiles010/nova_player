@@ -53,7 +53,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 
 ## Download
 
-Android: get the APK from the [latest release](https://github.com/HarshaanNiles010/nova_player/releases/latest) and open it on your phone. There is no iPhone download; see [iPhone](#iphone) to build it yourself.
+Android: get the APK from the [latest release](https://github.com/HarshaanNiles010/nova_player/releases/latest) and open it on your phone. Each release has one APK per processor type; almost every recent phone needs **arm64-v8a**. There is no iPhone download; see [iPhone](#iphone) to build it yourself.
 
 ## Requirements
 
@@ -109,11 +109,33 @@ Release builds need your own signing key; the build stops instead of falling bac
    keyAlias=nova
    keyPassword=...
    ```
-3. Build and install:
+3. Build and install (arm64 matches almost every phone; the APK per processor type is far smaller than one for all):
    ```sh
-   flutter build apk --release
-   adb install -r build/app/outputs/flutter-apk/app-release.apk
+   flutter build apk --release --split-per-abi
+   adb install -r build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
    ```
+
+### Publishing a release
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) builds and publishes a release whenever a `v*` tag is pushed. It checks the tag matches `pubspec.yaml`, installs packages exactly as `pubspec.lock` pins them, runs the analyzer and tests, then attaches one signed APK per processor type and their checksums.
+
+It signs with your key from four repository secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `KEYSTORE_BASE64` | the keystore file as base64: `base64 -i nova-player-release.jks \| pbcopy` on a Mac |
+| `KEYSTORE_PASSWORD` | `storePassword` from `android/key.properties` |
+| `KEY_PASSWORD` | `keyPassword` |
+| `KEY_ALIAS` | `keyAlias` |
+
+To release:
+1. Raise `version:` in `pubspec.yaml`, for example `1.0.1+2` to `1.0.2+3`. The number after `+` must go up, or phones will not install the update.
+2. Commit and push, then tag and push the tag:
+   ```sh
+   git tag -a v1.0.2 -m "Nova Player 1.0.2"
+   git push origin v1.0.2
+   ```
+3. Watch it under the repository's Actions tab; the release appears when it finishes.
 
 ## Add a theme
 
