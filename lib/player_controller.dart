@@ -46,7 +46,14 @@ class PlayerController extends ChangeNotifier {
   DateTime? _listenStart;
   late final Timer _checkpoint;
 
-  final AudioPlayer player = AudioPlayer();
+  /// Android's equalizer on the player's output; null on other platforms.
+  final AndroidEqualizer? equalizer =
+      defaultTargetPlatform == TargetPlatform.android
+      ? AndroidEqualizer()
+      : null;
+  late final AudioPlayer player = AudioPlayer(
+    audioPipeline: AudioPipeline(androidAudioEffects: [?equalizer]),
+  );
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   final List<Song> _activeSequence = [];
   final List<Song> _queue = [];

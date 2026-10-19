@@ -18,6 +18,26 @@ class SettingsStore {
   static const _textScaleKey = 'text_scale';
   static const _downloadedThemesKey = 'downloaded_themes';
   static const _downloadedFontsKey = 'downloaded_fonts';
+  static const _eqEnabledKey = 'eq_enabled';
+  static const _eqGainsKey = 'eq_gains';
+
+  /// Whether the equalizer is on, and each band's gain in dB.
+  Future<(bool, List<double>)> loadEqualizer() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (
+      prefs.getBool(_eqEnabledKey) ?? false,
+      [
+        for (final gain in prefs.getStringList(_eqGainsKey) ?? <String>[])
+          double.tryParse(gain) ?? 0,
+      ],
+    );
+  }
+
+  Future<void> saveEqualizer(bool enabled, List<double> gains) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_eqEnabledKey, enabled);
+    await prefs.setStringList(_eqGainsKey, [for (final gain in gains) '$gain']);
+  }
 
   /// Each entry is one theme as JSON.
   Future<List<String>> loadDownloadedThemes() async =>

@@ -11,6 +11,7 @@ import 'backup.dart';
 import 'downloads.dart';
 import 'duplicates.dart';
 import 'duplicates_page.dart';
+import 'equalizer_page.dart';
 import 'group_by.dart';
 import 'listening_history.dart';
 import 'lyrics.dart';
@@ -112,6 +113,7 @@ class _MusicHomePageState extends State<MusicHomePage> {
     await _player.setQueueMode(await _settings.loadQueueMode());
     _groupBy = await _settings.loadGroupBy();
     _hidden = await _settings.loadHidden();
+    unawaited(restoreEqualizer(_player.equalizer));
     await _loadLibrary();
     await _restoreSession();
   }
@@ -270,6 +272,7 @@ class _MusicHomePageState extends State<MusicHomePage> {
           },
           onReload: _loadLibrary,
           onFindDuplicates: _openDuplicates,
+          equalizer: _player.equalizer,
           songCount: () => _songs.length,
         ),
       ),
@@ -2945,6 +2948,7 @@ class SettingsPage extends StatefulWidget {
     required this.onModeChanged,
     required this.onReload,
     required this.onFindDuplicates,
+    required this.equalizer,
     required this.songCount,
   });
 
@@ -2955,6 +2959,7 @@ class SettingsPage extends StatefulWidget {
   /// Reloads the library on the home screen.
   final Future<void> Function() onReload;
   final VoidCallback onFindDuplicates;
+  final AndroidEqualizer? equalizer;
   final int Function() songCount;
 
   @override
@@ -3159,6 +3164,21 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             onTap: _scanning ? null : _rescan,
           ),
+          if (widget.equalizer case final equalizer?)
+            ListTile(
+              leading: const Icon(Icons.equalizer_rounded),
+              title: const Text('Equalizer'),
+              subtitle: Text(equalizer.enabled ? 'On' : 'Off'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => EqualizerPage(equalizer: equalizer),
+                  ),
+                );
+                if (mounted) setState(() {});
+              },
+            ),
           ListTile(
             leading: const Icon(Icons.save_alt_rounded),
             title: const Text('Back up'),
