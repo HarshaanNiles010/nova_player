@@ -66,9 +66,10 @@ class PlayerController extends ChangeNotifier {
   List<Song> _order = const [];
   bool shuffleEnabled = false;
 
-  /// True while songs move around the playing one, so index changes from
-  /// that are not mistaken for playback leaving the queue.
-  bool _rearranging = false;
+  /// The playing song while songs move around it. Index changes from that
+  /// are not mistaken for playback leaving the queue, and [currentSong]
+  /// keeps returning it while the player's index catches up.
+  Song? _rearranging;
 
   /// iOS sets up every song handed to its player at once, which makes each
   /// play or queue change take seconds with a big list. There the player
@@ -91,6 +92,7 @@ class PlayerController extends ChangeNotifier {
 
   Song? get currentSong {
     if (!_hasSelection) return null;
+    if (_rearranging case final song?) return song;
     final index = player.currentIndex;
     return index == null || index < 0 || index >= _activeSequence.length
         ? null
@@ -483,14 +485,14 @@ class PlayerController extends ChangeNotifier {
 
   void _onIndexChanged(int? index) {
     _trackListening();
-    if (!_rearranging &&
+    if (_rearranging == null &&
         index != null &&
         index >= _activeSequence.length - 3 &&
         _loadedEnd < _order.length) {
       unawaited(_loadMore());
     }
     final end = _queueEnd;
-    if (!_rearranging && index != null && end != null && index > end) {
+    if (_rearranging == null && index != null && end != null && index > end) {
       _clearQueueState();
     }
     notifyListeners();
@@ -554,10 +556,10 @@ class PlayerController extends ChangeNotifier {
       _queueStart = anchor + 1;
       _queueEnd = anchor + _queue.length;
     }
+    _rearranging = current;
     _activeSequence
       ..removeRange(0, index)
       ..insertAll(0, before);
-    _rearranging = true;
     try {
       if (index > 0) await player.removeAudioSourceRange(0, index);
       if (before.isNotEmpty) {
@@ -572,7 +574,7 @@ class PlayerController extends ChangeNotifier {
         from: (_queueEnd ?? before.length) + 1,
       );
     } finally {
-      _rearranging = false;
+      _rearranging = null;
     }
     _baseSequence =
         _queueStart == null && !shuffleEnabled && identical(_order, songs);
