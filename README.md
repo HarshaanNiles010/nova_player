@@ -24,7 +24,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - A waveform seek bar on Now Playing.
 - Lyrics from the file's tags or a matching `.lrc` file. Synced lyrics follow the song.
 - For a song without lyrics, tap **Download lyrics** on Now Playing to fetch them from [LRCLIB](https://lrclib.net), synced when available. Only that song's title, artist, album and length are sent, and only when you tap.
-- **Translate** in the lyrics header shows English in italics under each line, in sync with the song; tap **Original only** to hide it. Translation runs on the phone (Google ML Kit), so lyrics never leave it; the first use of a language downloads its model (about 30 MB). Lyrics written in Latin letters, like romaji, cannot be translated.
+- **Translate** in the lyrics header shows English in italics under each line, in sync with the song; tap **Original only** to hide it. Translation runs on the phone (Google ML Kit), so lyrics never leave it; the first use of a language downloads its model (about 30 MB). Lyrics written in Latin letters, like romaji, cannot be translated. Settings → Translation languages lists the downloaded language packs; delete any of them to free space, and translating a song in that language downloads it again.
 - Downloaded lyrics are saved as `Song.lrc` and translations as `Song.en.lrc` next to the song, so each song is fetched or translated once and other players can use the files. This needs the lyrics folder (Settings → Lyrics folder) to be your music folder, for example `Music`, picked with write access; a folder picked before this showed as "read only" and must be picked again. Without one, they are kept in the app's storage.
 - In landscape, Now Playing shows the player on the left and lyrics on the right.
 
@@ -142,6 +142,7 @@ Themes in the "Get more themes" screen come from [`themes/catalog.json`](themes/
 | `lib/player_controller.dart`, `lib/queue_mode.dart` | Playback and the queue (just_audio) |
 | `lib/equalizer_page.dart` | The equalizer screen, presets and restoring saved gains |
 | `lib/lyrics_translation.dart` | On-device lyrics translation and the saved `.en.lrc` format |
+| `lib/translation_models_page.dart` | Listing and deleting downloaded translation language packs |
 | `lib/smart_playlists.dart` | Smart playlists and the genre-mix ranking |
 | `lib/theme.dart`, `lib/downloads.dart` | Themes and fonts, plus downloading them and lyrics from LRCLIB |
 | `lib/listening_history.dart`, `lib/stats_page.dart` | Play history and stats |
