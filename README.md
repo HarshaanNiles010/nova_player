@@ -23,6 +23,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Gapless playback between songs in the same format (sample rate and channels); a format change can leave a short gap.
 - A waveform seek bar on Now Playing.
 - Lyrics from the file's tags or a matching `.lrc` file. Synced lyrics follow the song.
+- For a song without lyrics, tap **Download lyrics** on Now Playing to fetch them from [LRCLIB](https://lrclib.net), synced when available. Only that song's title, artist, album and length are sent, and only when you tap. Downloaded lyrics are kept in the app's storage, not in your lyrics folder.
 - In landscape, Now Playing shows the player on the left and lyrics on the right.
 
 **Playlists**
@@ -139,7 +140,7 @@ Themes in the "Get more themes" screen come from [`themes/catalog.json`](themes/
 | `lib/player_controller.dart`, `lib/queue_mode.dart` | Playback and the queue (just_audio) |
 | `lib/equalizer_page.dart` | The equalizer screen, presets and restoring saved gains |
 | `lib/smart_playlists.dart` | Smart playlists and the genre-mix ranking |
-| `lib/theme.dart`, `lib/downloads.dart` | Themes and fonts, plus downloading them |
+| `lib/theme.dart`, `lib/downloads.dart` | Themes and fonts, plus downloading them and lyrics from LRCLIB |
 | `lib/listening_history.dart`, `lib/stats_page.dart` | Play history and stats |
 | `android/app/src/main/kotlin/` | MediaStore scanning, extra folders, lyrics files and widgets |
 | `ios/Runner/AppDelegate.swift` | iPhone library scan, picked folders, artwork, lyrics and file picker |
