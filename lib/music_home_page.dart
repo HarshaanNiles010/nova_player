@@ -28,6 +28,7 @@ import 'smart_playlists.dart';
 import 'song.dart';
 import 'stats_page.dart';
 import 'theme.dart';
+import 'translation_models_page.dart';
 import 'waveform.dart';
 
 class MusicHomePage extends StatefulWidget {
@@ -3306,6 +3307,17 @@ class _SettingsPageState extends State<SettingsPage> {
                 if (mounted) setState(() {});
               },
             ),
+          ListTile(
+            leading: const Icon(Icons.translate_rounded),
+            title: const Text('Translation languages'),
+            subtitle: const Text('Delete downloaded language packs'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const TranslationModelsPage(),
+              ),
+            ),
+          ),
           ListTile(
             leading: const Icon(Icons.save_alt_rounded),
             title: const Text('Back up'),
