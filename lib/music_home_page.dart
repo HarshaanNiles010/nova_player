@@ -1308,6 +1308,33 @@ class _LyricsPanelState extends State<_LyricsPanel> {
   late Future<List<LyricLine>> _lines;
   List<GlobalKey> _keys = const [];
   int _active = -1;
+  bool _downloading = false;
+
+  /// Looks the song up on LRCLIB and shows what it finds.
+  Future<void> _download() async {
+    final song = widget.song;
+    setState(() => _downloading = true);
+    String? message;
+    try {
+      final lyrics = await fetchLyrics(song);
+      if (lyrics == null) {
+        message = 'LRCLIB has no lyrics for this song.';
+      } else {
+        await MusicLibrary().saveDownloadedLyrics(song, lyrics);
+      }
+    } catch (_) {
+      message = 'Could not reach LRCLIB. Check your connection.';
+    }
+    if (!mounted) return;
+    setState(() {
+      _downloading = false;
+      if (message == null && widget.song.id == song.id) _load();
+    });
+    if (message != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
 
   @override
   void initState() {
@@ -1366,12 +1393,25 @@ class _LyricsPanelState extends State<_LyricsPanel> {
             : null;
         if (lines == null) return const SizedBox(height: 48);
         if (lines.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.only(bottom: 8),
-            child: Text(
-              'No lyrics found for this song',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
-            ),
+          return Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'No lyrics found for this song',
+                  style: TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _downloading ? null : _download,
+                icon: _downloading
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.download_rounded, size: 18),
+                label: const Text('Download lyrics'),
+              ),
+            ],
           );
         }
         final synced = lines.first.time != null;

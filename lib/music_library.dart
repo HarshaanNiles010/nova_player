@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 
 import 'song.dart';
@@ -54,13 +56,36 @@ class MusicLibrary {
   static final _lyrics = <String, Future<String?>>{};
 
   /// Lyrics text (often LRC): embedded in the file, else a matching .lrc in
-  /// the lyrics folder. Cached per song for this session.
+  /// the lyrics folder, else downloaded ones. Cached per song for this session.
   Future<String?> loadLyrics(Song song) => _lyrics[song.id] ??= _channel
       .invokeMethod<String>('getLyrics', {
         'uri': song.uri.toString(),
         'fileName': song.fileName,
       })
-      .catchError((Object _) => null);
+      .catchError((Object _) => null)
+      .then((found) async {
+        if (found != null) return found;
+        final file = await _downloadedLyrics(song);
+        return await file.exists() ? file.readAsString() : null;
+      });
+
+  /// Keeps downloaded lyrics in the app's storage, so no folder access is needed.
+  Future<void> saveDownloadedLyrics(Song song, String lyrics) async {
+    final file = await _downloadedLyrics(song);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(lyrics);
+    _lyrics[song.id] = Future.value(lyrics);
+  }
+
+  // shortcut: keyed by file name like the lyrics folder, so two different
+  // songs with the same file name share lyrics; key by song id if that bites.
+  Future<File> _downloadedLyrics(Song song) async {
+    final files = await _channel.invokeMethod<String>('getFilesDir');
+    final name = song.fileName.contains('.')
+        ? song.fileName.substring(0, song.fileName.lastIndexOf('.'))
+        : song.fileName;
+    return File('$files/lyrics/${name.replaceAll('/', '_')}.lrc');
+  }
 
   /// Name of the picked .lrc folder, or null when none is set.
   Future<String?> lyricsFolder() => _channel

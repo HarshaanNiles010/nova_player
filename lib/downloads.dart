@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 
+import 'song.dart';
 import 'theme.dart';
 
 /// Themes anyone can add to by editing themes/catalog.json in the repo.
@@ -26,7 +27,13 @@ const suggestedFonts = [
 Future<Uint8List> _get(Uri url) async {
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
   try {
-    final response = await (await client.getUrl(url)).close();
+    final request = await client.getUrl(url);
+    // LRCLIB asks apps to name themselves.
+    request.headers.set(
+      HttpHeaders.userAgentHeader,
+      'Nova Player (https://github.com/HarshaanNiles010/nova_player)',
+    );
+    final response = await request.close();
     final bytes = await response.fold<BytesBuilder>(
       BytesBuilder(),
       (builder, chunk) => builder..add(chunk),
@@ -45,8 +52,7 @@ Future<List<AppThemePreset>> fetchThemeCatalog() async =>
 
 /// Skips entries that are not valid themes instead of failing the whole list.
 List<AppThemePreset> parseThemeCatalog(String json) => [
-  for (final item in jsonDecode(json) as List<dynamic>)
-    ?_tryTheme(item),
+  for (final item in jsonDecode(json) as List<dynamic>) ?_tryTheme(item),
 ];
 
 AppThemePreset? _tryTheme(Object? item) {
@@ -67,9 +73,8 @@ List<(int, Uri)> fontFileUrls(String css) => [
 
 /// Downloaded font files live in `<app files>/fonts/<family>-<weight>.ttf`.
 Future<Directory> _fontDir() async {
-  final files = await const MethodChannel(
-    'com.novaplayer/music_library',
-  ).invokeMethod<String>('getFilesDir');
+  final files = await const MethodChannel('com.novaplayer/music_library')
+      .invokeMethod<String>('getFilesDir');
   return Directory('$files/fonts').create(recursive: true);
 }
 
@@ -77,9 +82,9 @@ String _stem(String name) =>
     name.toLowerCase().replaceAll(RegExp('[^a-z0-9]+'), '-');
 
 /// Weight files of [name] only: "nunito-400.ttf", not "nunito-sans-400.ttf".
-bool _isFileOf(File file, String name) => RegExp(
-  '^${RegExp.escape(_stem(name))}-\\d+\\.ttf\$',
-).hasMatch(file.uri.pathSegments.last);
+bool _isFileOf(File file, String name) =>
+    RegExp('^${RegExp.escape(_stem(name))}-\\d+\\.ttf\$')
+        .hasMatch(file.uri.pathSegments.last);
 
 /// Downloads regular and bold of a Google Fonts family and saves the files.
 /// Throws when the family does not exist or the phone is offline.
@@ -96,9 +101,8 @@ Future<void> downloadFont(String name) async {
   if (urls.isEmpty) throw FormatException('No font files for $name');
   final dir = await _fontDir();
   for (final (weight, url) in urls) {
-    await File(
-      '${dir.path}/${_stem(name)}-$weight.ttf',
-    ).writeAsBytes(await _get(url));
+    await File('${dir.path}/${_stem(name)}-$weight.ttf')
+        .writeAsBytes(await _get(url));
   }
 }
 
@@ -123,4 +127,54 @@ Future<void> deleteFontFiles(String name) async {
       await file.delete();
     }
   }
+}
+
+/// Lyrics for [song] from LRCLIB (lrclib.net), synced when it has them;
+/// null when it has none. Throws when LRCLIB cannot be reached.
+Future<String?> fetchLyrics(Song song) async {
+  final seconds = song.duration.inSeconds;
+  try {
+    final exact = await _get(
+      Uri.https('lrclib.net', '/api/get', {
+        'track_name': song.title,
+        'artist_name': song.artist,
+        'album_name': song.album,
+        'duration': '$seconds',
+      }),
+    );
+    return lrclibLyrics(jsonDecode(utf8.decode(exact)));
+  } on HttpException {
+    // Not found with this album and length; search by title and artist.
+  }
+  final found = await _get(
+    Uri.https('lrclib.net', '/api/search', {
+      'track_name': song.title,
+      'artist_name': song.artist,
+    }),
+  );
+  return closestLrclibLyrics(jsonDecode(utf8.decode(found)), seconds);
+}
+
+/// The lyrics of one LRCLIB record, synced first.
+String? lrclibLyrics(Object? record) {
+  if (record is! Map<String, dynamic>) return null;
+  for (final key in ['syncedLyrics', 'plainLyrics']) {
+    if (record[key] case final String text when text.trim().isNotEmpty) {
+      return text;
+    }
+  }
+  return null;
+}
+
+/// Lyrics of the search result whose length is closest to [seconds], within
+/// 3 seconds, so a live or extended version is not used.
+String? closestLrclibLyrics(Object? results, int seconds) {
+  if (results is! List<dynamic>) return null;
+  final candidates = [
+    for (final record in results)
+      if (record case {'duration': final num length}
+          when (length - seconds).abs() <= 3 && lrclibLyrics(record) != null)
+        (record, (length - seconds).abs()),
+  ]..sort((a, b) => a.$2.compareTo(b.$2));
+  return candidates.isEmpty ? null : lrclibLyrics(candidates.first.$1);
 }
