@@ -19,6 +19,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Queued songs stay put when you shuffle (in the app, or from a car or Bluetooth device), jump to another song, or close the app.
 - Reopening the app brings back the last song, paused where you left it, with shuffle as you left it.
 - Sleep timer: pause after 15 to 60 minutes or at the end of the song, fading out over the last 10 seconds.
+- Equalizer in Settings: one slider per band your phone offers, with Flat, Bass, Treble and Vocal presets. It is remembered across restarts.
 - Gapless playback between songs in the same format (sample rate and channels); a format change can leave a short gap.
 - A waveform seek bar on Now Playing.
 - Lyrics from the file's tags or a matching `.lrc` file. Synced lyrics follow the song.
@@ -73,7 +74,7 @@ iPhone apps cannot read the whole phone, so Nova on iOS plays:
 - audio files you copy into the app (Finder → your iPhone → Files → Nova Player, or the Files app);
 - folders you pick in Settings → Music folders (On My iPhone, iCloud Drive or a USB drive). iCloud songs must be downloaded to the phone first.
 
-The Apple Music library is not used. Ogg and Opus files are skipped, since iOS cannot play them. Widgets, the lyrics folder picker and rescanning are Android only; lyrics come from tags or a `.lrc` file next to the song. Restoring a backup closes the app; open it again to load the restored settings.
+The Apple Music library is not used. Ogg and Opus files are skipped, since iOS cannot play them. Widgets, the equalizer, the lyrics folder picker and rescanning are Android only; lyrics come from tags or a `.lrc` file next to the song. Restoring a backup closes the app; open it again to load the restored settings.
 
 To keep playing and queueing fast, the iPhone player loads 40 songs around the one playing and adds more as it goes. So "Up next" shows about the next 40 songs, and going back with previous or repeat-all reaches at most 40 songs before where you started playing.
 
@@ -136,6 +137,7 @@ Themes in the "Get more themes" screen come from [`themes/catalog.json`](themes/
 | --- | --- |
 | `lib/music_home_page.dart` | Most of the UI: library, Now Playing, playlists, settings |
 | `lib/player_controller.dart`, `lib/queue_mode.dart` | Playback and the queue (just_audio) |
+| `lib/equalizer_page.dart` | The equalizer screen, presets and restoring saved gains |
 | `lib/smart_playlists.dart` | Smart playlists and the genre-mix ranking |
 | `lib/theme.dart`, `lib/downloads.dart` | Themes and fonts, plus downloading them |
 | `lib/listening_history.dart`, `lib/stats_page.dart` | Play history and stats |
