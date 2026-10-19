@@ -52,6 +52,10 @@ android {
             // No silent fallback to the debug key: a differently signed build
             // cannot be installed over the existing app.
             signingConfig = signingConfigs.getByName("release")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

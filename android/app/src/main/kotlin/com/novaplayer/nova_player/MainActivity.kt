@@ -62,7 +62,25 @@ class MainActivity : AudioServiceActivity() {
                     call.argument<String>("fileName"),
                     result
                 )
-                "getLyricsFolder" -> result.success(lrcFolder.displayName())
+                "getLyricsFolder" -> result.success(
+                    lrcFolder.displayName()?.let { if (lrcFolder.writable()) it else "$it (read only)" }
+                )
+                "getStoredTranslation" -> {
+                    val fileName = call.argument<String>("fileName")
+                    lyricsExecutor.execute {
+                        val text = runCatching { fileName?.let { lrcFolder.lyricsFor(it, ".en") } }.getOrNull()
+                        runOnUiThread { result.success(text) }
+                    }
+                }
+                "saveLyrics" -> {
+                    val path = call.argument<String>("path")
+                    val name = call.argument<String>("name") ?: ""
+                    val text = call.argument<String>("text") ?: ""
+                    lyricsExecutor.execute {
+                        val saved = runCatching { lrcFolder.save(path, name, text) }.getOrDefault(false)
+                        runOnUiThread { result.success(saved) }
+                    }
+                }
                 "getFilesDir" -> result.success(filesDir.absolutePath)
                 "getMusicFolders" -> result.success(musicFolders.list())
                 "addMusicFolder" -> addMusicFolder(result)

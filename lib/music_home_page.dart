@@ -15,6 +15,7 @@ import 'equalizer_page.dart';
 import 'group_by.dart';
 import 'listening_history.dart';
 import 'lyrics.dart';
+import 'lyrics_translation.dart';
 import 'm3u.dart';
 import 'music_library.dart';
 import 'player_controller.dart';
@@ -1310,6 +1311,57 @@ class _LyricsPanelState extends State<_LyricsPanel> {
   int _active = -1;
   bool _downloading = false;
 
+  /// English under each line, while the translation is shown.
+  List<String>? _english;
+  bool _translating = false;
+
+  /// Shows English under each line, or hides it again.
+  Future<void> _translate(List<LyricLine> lines) async {
+    if (_english != null) {
+      setState(() => _english = null);
+      return;
+    }
+    final song = widget.song;
+    setState(() => _translating = true);
+    List<String>? english;
+    String? message;
+    try {
+      final library = MusicLibrary();
+      // A saved translation first: no model work, nothing downloaded.
+      final saved = await library.loadStoredTranslation(song);
+      english = saved == null ? null : readTranslation(lines, saved);
+      if (english == null) {
+        final result = await translateLyrics(lines);
+        english = result.english;
+        if (english != null) {
+          await library.saveTranslation(song, translationLrc(lines, english));
+        }
+        message = switch (result.reason) {
+          NoTranslation.english => 'These lyrics are already in English.',
+          NoTranslation.romanized =>
+            'These lyrics are written in Latin letters (like romaji), which '
+                'cannot be translated on the phone.',
+          NoTranslation.unknownLanguage =>
+            'Could not tell which language these lyrics are in.',
+          null => null,
+        };
+      }
+    } catch (_) {
+      message =
+          'Translation failed. The first time, each language needs internet '
+          'to download (about 30 MB).';
+    }
+    if (!mounted) return;
+    setState(() {
+      _translating = false;
+      if (widget.song.id == song.id) _english = english;
+    });
+    if (message != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
   /// Looks the song up on LRCLIB and shows what it finds.
   Future<void> _download() async {
     final song = widget.song;
@@ -1350,6 +1402,7 @@ class _LyricsPanelState extends State<_LyricsPanel> {
 
   void _load() {
     _active = -1;
+    _english = null;
     late final Future<List<LyricLine>> lines;
     lines = MusicLibrary().loadLyrics(widget.song).then((raw) {
       final parsed = raw == null ? const <LyricLine>[] : parseLyrics(raw);
@@ -1434,10 +1487,31 @@ class _LyricsPanelState extends State<_LyricsPanel> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'LYRICS',
-                  key: _headerKey,
-                  style: const TextStyle(fontSize: 12, letterSpacing: 2.4),
+                Row(
+                  children: [
+                    Text(
+                      'LYRICS',
+                      key: _headerKey,
+                      style: const TextStyle(fontSize: 12, letterSpacing: 2.4),
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      onPressed: _translating ? null : () => _translate(lines),
+                      icon: _translating
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.translate_rounded, size: 18),
+                      label: Text(
+                        _translating
+                            ? 'Translating...'
+                            : _english == null
+                            ? 'Translate'
+                            : 'Original only',
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 for (var i = 0; i < lines.length; i++)
@@ -1463,8 +1537,21 @@ class _LyricsPanelState extends State<_LyricsPanel> {
                               ? Colors.white54
                               : Colors.white30,
                         ),
-                        child: Text(
-                          lines[i].text.isEmpty ? '♪' : lines[i].text,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(lines[i].text.isEmpty ? '♪' : lines[i].text),
+                            if (_english?[i] case final english?
+                                when english.isNotEmpty)
+                              Text(
+                                english,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w400,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),

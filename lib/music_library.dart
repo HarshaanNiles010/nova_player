@@ -63,28 +63,61 @@ class MusicLibrary {
         'fileName': song.fileName,
       })
       .catchError((Object _) => null)
-      .then((found) async {
-        if (found != null) return found;
-        final file = await _downloadedLyrics(song);
-        return await file.exists() ? file.readAsString() : null;
-      });
+      .then(
+        (found) async => found ?? await _readAppLyrics('${_base(song)}.lrc'),
+      );
 
-  /// Keeps downloaded lyrics in the app's storage, so no folder access is needed.
+  /// Saves downloaded lyrics as "Song.lrc" for "Song.flac"; see [_store].
   Future<void> saveDownloadedLyrics(Song song, String lyrics) async {
-    final file = await _downloadedLyrics(song);
-    await file.parent.create(recursive: true);
-    await file.writeAsString(lyrics);
+    await _store(song, '${_base(song)}.lrc', lyrics);
     _lyrics[song.id] = Future.value(lyrics);
+  }
+
+  /// A saved English translation ("Song.en.lrc"), or null.
+  Future<String?> loadStoredTranslation(Song song) async =>
+      await _channel
+          .invokeMethod<String>('getStoredTranslation', {
+            'fileName': song.fileName,
+          })
+          .catchError((Object _) => null) ??
+      await _readAppLyrics('${_base(song)}.en.lrc');
+
+  Future<void> saveTranslation(Song song, String lrc) =>
+      _store(song, '${_base(song)}.en.lrc', lrc);
+
+  /// Into the lyrics folder, next to the song when it is inside it, so the
+  /// lyrics stay with the music; else in the app's storage.
+  Future<void> _store(Song song, String name, String text) async {
+    final saved = await _channel
+        .invokeMethod<bool>('saveLyrics', {
+          'path': song.path,
+          'name': name,
+          'text': text,
+        })
+        .catchError((Object _) => false);
+    if (saved ?? false) return;
+    final file = await _appLyrics(name);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(text);
+  }
+
+  Future<String?> _readAppLyrics(String name) async {
+    final file = await _appLyrics(name);
+    return await file.exists() ? file.readAsString() : null;
+  }
+
+  Future<File> _appLyrics(String name) async {
+    final files = await _channel.invokeMethod<String>('getFilesDir');
+    return File('$files/lyrics/$name');
   }
 
   // shortcut: keyed by file name like the lyrics folder, so two different
   // songs with the same file name share lyrics; key by song id if that bites.
-  Future<File> _downloadedLyrics(Song song) async {
-    final files = await _channel.invokeMethod<String>('getFilesDir');
+  static String _base(Song song) {
     final name = song.fileName.contains('.')
         ? song.fileName.substring(0, song.fileName.lastIndexOf('.'))
         : song.fileName;
-    return File('$files/lyrics/${name.replaceAll('/', '_')}.lrc');
+    return name.replaceAll('/', '_');
   }
 
   /// Name of the picked .lrc folder, or null when none is set.

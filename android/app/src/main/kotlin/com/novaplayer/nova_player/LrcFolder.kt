@@ -10,7 +10,8 @@ import java.io.File
 /**
  * A folder the user picked through the system folder picker, searched (including
  * subfolders) for "<song file name without extension>.lrc". Only this folder is
- * readable, so no broad storage permission is needed.
+ * reachable, so no broad storage permission is needed. Downloaded and translated
+ * lyrics are saved into it, next to the song when the song is inside it.
  */
 class LrcFolder(private val context: Context) {
     private val prefs = context.getSharedPreferences("nova_lyrics", Context.MODE_PRIVATE)
@@ -24,8 +25,18 @@ class LrcFolder(private val context: Context) {
         DocumentsContract.getTreeDocumentId(it).substringAfter(':').ifEmpty { "Storage root" }
     }
 
+    /** Whether lyrics can be saved here (folders picked before saving existed are read only). */
+    fun writable(): Boolean = treeUri?.let { tree ->
+        context.contentResolver.persistedUriPermissions.any { it.uri == tree && it.isWritePermission }
+    } ?: false
+
     fun set(uri: Uri) {
-        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val readWrite = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        try {
+            context.contentResolver.takePersistableUriPermission(uri, readWrite)
+        } catch (_: SecurityException) {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
         treeUri?.takeIf { it != uri }?.let(::release)
         prefs.edit().putString(KEY, uri.toString()).apply()
         synchronized(this) {
@@ -43,8 +54,9 @@ class LrcFolder(private val context: Context) {
         }
     }
 
-    fun lyricsFor(fileName: String): String? {
-        val base = fileName.substringBeforeLast('.').lowercase()
+    /** Lyrics for a song file; [suffix] ".en" finds its saved English translation. */
+    fun lyricsFor(fileName: String, suffix: String = ""): String? {
+        val base = fileName.substringBeforeLast('.').lowercase() + suffix
         if (base.isEmpty()) return null
         val uri = indexOrBuild()[base] ?: return null
         return context.contentResolver.openInputStream(uri)?.use {
@@ -71,9 +83,53 @@ class LrcFolder(private val context: Context) {
         synchronized(this) {
             if (treeUri != tree) return found // folder changed mid-scan; drop the result
             index = found
-            indexFile.writeText(found.entries.joinToString("\n") { "${it.key}\t${it.value}" })
+            saveIndex(found)
         }
         return found
+    }
+
+    private fun saveIndex(found: Map<String, Uri>) {
+        indexFile.writeText(found.entries.joinToString("\n") { "${it.key}\t${it.value}" })
+    }
+
+    /**
+     * Writes [text] as [name] (e.g. "Song.lrc") into the song's own folder when that is
+     * inside this folder, else into this folder; replaces a file of that name it already
+     * indexed. False when no folder is set or it is read only.
+     */
+    fun save(songPath: String?, name: String, text: String): Boolean {
+        val tree = treeUri ?: return false
+        if (!writable()) return false
+        val key = name.substringBeforeLast('.').lowercase()
+        val treeDoc = DocumentsContract.getTreeDocumentId(tree)
+        val songDir = songPath?.let(::documentIdOf)?.substringBeforeLast('/')
+        val dir = songDir?.takeIf { it == treeDoc || it.startsWith("$treeDoc/") } ?: treeDoc
+        val uri = indexOrBuild()[key] ?: DocumentsContract.createDocument(
+            context.contentResolver,
+            DocumentsContract.buildDocumentUriUsingTree(tree, dir),
+            "application/octet-stream", // keeps the .lrc name as given
+            name,
+        ) ?: return false
+        context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray()) }
+            ?: return false
+        synchronized(this) {
+            val updated = (index ?: emptyMap()) + (key to uri)
+            index = updated
+            saveIndex(updated)
+        }
+        return true
+    }
+
+    /** "primary:Music/Song.flac" for /storage/emulated/0/Music/Song.flac, as document ids go. */
+    private fun documentIdOf(path: String): String? {
+        val primary = "/storage/emulated/0/"
+        return when {
+            path.startsWith(primary) -> "primary:" + path.removePrefix(primary)
+            path.startsWith("/storage/") -> path.removePrefix("/storage/").let {
+                "${it.substringBefore('/')}:${it.substringAfter('/')}"
+            }
+            else -> null
+        }
     }
 
     private fun loadSaved(): Map<String, Uri>? {
@@ -117,9 +173,11 @@ class LrcFolder(private val context: Context) {
     }
 
     private fun release(uri: Uri) {
-        runCatching {
-            context.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
+        val readWrite = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        runCatching { context.contentResolver.releasePersistableUriPermission(uri, readWrite) }
+            .recoverCatching {
+                context.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
     }
 
     private companion object {
