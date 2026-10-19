@@ -1320,11 +1320,17 @@ class _LyricsPanelState extends State<_LyricsPanel> {
 
   void _load() {
     _active = -1;
-    _lines = MusicLibrary().loadLyrics(widget.song).then((raw) {
-      final lines = raw == null ? const <LyricLine>[] : parseLyrics(raw);
-      _keys = List.generate(lines.length, (_) => GlobalKey());
-      return lines;
+    late final Future<List<LyricLine>> lines;
+    lines = MusicLibrary().loadLyrics(widget.song).then((raw) {
+      final parsed = raw == null ? const <LyricLine>[] : parseLyrics(raw);
+      // An older load finishing last (shuffle can switch songs and back) must
+      // not replace the keys of the lines on screen.
+      if (identical(_lines, lines)) {
+        _keys = List.generate(parsed.length, (_) => GlobalKey());
+      }
+      return parsed;
     });
+    _lines = lines;
   }
 
   /// Scrolls the page to keep the active line near the top third, but only once
