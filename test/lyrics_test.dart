@@ -22,6 +22,14 @@ void main() {
     );
   });
 
+  test('reads millisecond and colon-separated fractions', () {
+    final lines = parseLyrics('[00:01.234]a\n[00:02:50]b');
+    expect(lines.map((line) => line.time), [
+      const Duration(seconds: 1, milliseconds: 234),
+      const Duration(seconds: 2, milliseconds: 500),
+    ]);
+  });
+
   test('plain lyrics have no timestamps', () {
     final lines = parseLyrics('First line\n\nSecond line\n');
     expect(lines.map((line) => line.text), ['First line', 'Second line']);
