@@ -57,4 +57,14 @@ void main() {
       isEmpty,
     );
   });
+
+  test('lengths chain within the tolerance, a gap starts a new group', () {
+    final groups = findDuplicates([
+      song('1.mp3', 'Track'),
+      song('2.mp3', 'Track', seconds: 202),
+      song('3.mp3', 'Track', seconds: 204),
+      song('4.mp3', 'Track', seconds: 210),
+    ]);
+    expect(files(groups).single, unorderedEquals(['1.mp3', '2.mp3', '3.mp3']));
+  });
 }
