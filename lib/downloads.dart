@@ -105,10 +105,12 @@ Future<void> downloadFont(String name) async {
   );
   final urls = fontFileUrls(css);
   if (urls.isEmpty) throw FormatException('No font files for $name');
+  // Fetch every weight before saving any, so a failed download leaves no
+  // half-installed font that loads without its bold.
+  final files = [for (final (weight, url) in urls) (weight, await _get(url))];
   final dir = await _fontDir();
-  for (final (weight, url) in urls) {
-    await File('${dir.path}/${_stem(name)}-$weight.ttf')
-        .writeAsBytes(await _get(url));
+  for (final (weight, bytes) in files) {
+    await File('${dir.path}/${_stem(name)}-$weight.ttf').writeAsBytes(bytes);
   }
 }
 
