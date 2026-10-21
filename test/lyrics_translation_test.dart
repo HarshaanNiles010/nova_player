@@ -9,7 +9,10 @@ void main() {
 
   test('a saved translation reads back line for line', () {
     final lrc = translationLrc(lines, ['Invincible smile', '', '']);
-    expect(lrc, '[00:01.50]Invincible smile\n[00:04.00]Muteki no egao\n[01:02.25]');
+    expect(
+      lrc,
+      '[00:01.50]Invincible smile\n[00:04.00]Muteki no egao\n[01:02.25]',
+    );
     expect(readTranslation(lines, lrc), ['Invincible smile', '', '']);
   });
 
@@ -18,6 +21,11 @@ void main() {
     final lrc = translationLrc(plain, ['Hello', 'world']);
     expect(lrc, 'Hello\nworld');
     expect(readTranslation(plain, lrc), ['Hello', 'world']);
+  });
+
+  test('millisecond timestamps round into the next minute', () {
+    final precise = parseLyrics('[00:59.996]Да');
+    expect(translationLrc(precise, ['Yes']), '[01:00.00]Yes');
   });
 
   test('a translation of other lyrics is ignored', () {

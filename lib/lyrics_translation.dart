@@ -81,9 +81,9 @@ List<String>? readTranslation(List<LyricLine> lines, String lrc) {
 }
 
 String _stamp(Duration time) {
-  final minutes = time.inMinutes.toString().padLeft(2, '0');
-  final seconds = (time.inMilliseconds % 60000 / 1000)
-      .toStringAsFixed(2)
-      .padLeft(5, '0');
+  // Round to hundredths first, so 59.996 s carries to 01:00.00, not 00:60.00.
+  final hundredths = (time.inMilliseconds / 10).round();
+  final minutes = (hundredths ~/ 6000).toString().padLeft(2, '0');
+  final seconds = (hundredths % 6000 / 100).toStringAsFixed(2).padLeft(5, '0');
   return '$minutes:$seconds';
 }
