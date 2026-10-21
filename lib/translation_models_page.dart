@@ -33,6 +33,12 @@ class _TranslationModelsPageState extends State<TranslationModelsPage> {
       for (final language in languages) {
         await _models.deleteModel(language.bcpCode);
       }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not delete the language pack.')),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
