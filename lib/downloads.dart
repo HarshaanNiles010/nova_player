@@ -33,19 +33,25 @@ Future<Uint8List> _get(Uri url) async {
       HttpHeaders.userAgentHeader,
       'Nova Player (https://github.com/HarshaanNiles010/nova_player)',
     );
-    final response = await request.close();
-    final bytes = await response.fold<BytesBuilder>(
-      BytesBuilder(),
-      (builder, chunk) => builder..add(chunk),
-    );
+    // connectionTimeout only covers connecting; a server that stalls after
+    // that would leave a spinner up forever.
+    final response = await request.close().timeout(_readTimeout);
+    final bytes = await response
+        .timeout(_readTimeout)
+        .fold<BytesBuilder>(
+          BytesBuilder(),
+          (builder, chunk) => builder..add(chunk),
+        );
     if (response.statusCode != 200) {
       throw HttpException('HTTP ${response.statusCode}', uri: url);
     }
     return bytes.takeBytes();
   } finally {
-    client.close();
+    client.close(force: true);
   }
 }
+
+const _readTimeout = Duration(seconds: 20);
 
 Future<List<AppThemePreset>> fetchThemeCatalog() async =>
     parseThemeCatalog(utf8.decode(await _get(themeCatalogUrl)));
