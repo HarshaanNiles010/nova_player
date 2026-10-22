@@ -3113,6 +3113,14 @@ class _RecentlyPlayed extends StatefulWidget {
 class _RecentlyPlayedState extends State<_RecentlyPlayed> {
   late final _history = ListeningHistory.instance.load();
 
+  Future<void> _play(Song song) async {
+    final controller = widget.controller;
+    final wasPlaying = controller.currentSong != null;
+    // Plays it now and keeps the queue: it goes first in line, then we skip.
+    await controller.playNext(song);
+    if (wasPlaying) await controller.next();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<PlayRecord>>(
@@ -3151,6 +3159,7 @@ class _RecentlyPlayedState extends State<_RecentlyPlayed> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+              onTap: () => _play(song),
             );
           },
         );
