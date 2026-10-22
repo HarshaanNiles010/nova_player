@@ -11,10 +11,29 @@ class MusicLibrary {
   static const _thumbnailCacheLimit = 400;
   static final _thumbnails = <String, Future<Uint8List?>>{};
 
-  /// Bumped when a cover is saved, so artwork on screen reloads.
+  /// Bumped when a cover is saved or removed, so artwork on screen reloads.
   static final artworkChanged = ValueNotifier(0);
 
+  /// Saved covers by lower-case song name, as content:// or file:// URIs.
+  static var _covers = const <String, String>{};
+
+  /// [song]'s saved cover, for the notification; null when it has none.
+  static Uri? coverUri(Song song) {
+    final uri = _covers[_base(song).toLowerCase()];
+    return uri == null ? null : Uri.parse(uri);
+  }
+
+  static bool hasCover(Song song) => coverUri(song) != null;
+
+  Future<void> _loadCovers() async {
+    final found = await _channel
+        .invokeMapMethod<String, String>('getCovers')
+        .catchError((Object _) => null);
+    _covers = found ?? const {};
+  }
+
   Future<List<Song>> loadSongs() async {
+    await _loadCovers();
     final result = await _channel.invokeMethod<List<dynamic>>('getSongs') ?? [];
     return result
         .map((item) => Song.fromMap(Map<String, dynamic>.from(item as Map)))
@@ -158,6 +177,24 @@ class MusicLibrary {
       await file.parent.create(recursive: true);
       await file.writeAsBytes(bytes);
     }
+    await _coverChanged(song);
+  }
+
+  /// Deletes [song]'s saved cover, so the art inside the file shows again.
+  Future<void> removeCover(Song song) async {
+    final name = '${_base(song)}.jpg';
+    await _channel
+        .invokeMethod<bool>('deleteCover', {'name': name})
+        .catchError((Object _) => false);
+    final file = File(
+      '${await _channel.invokeMethod<String>('getFilesDir')}/covers/$name',
+    );
+    if (await file.exists()) await file.delete();
+    await _coverChanged(song);
+  }
+
+  Future<void> _coverChanged(Song song) async {
+    await _loadCovers();
     _thumbnails.removeWhere((key, _) => key.startsWith('${song.uri}@'));
     artworkChanged.value++;
   }

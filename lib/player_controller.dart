@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 
 import 'listening_history.dart';
+import 'music_library.dart';
 import 'queue_mode.dart';
 import 'song.dart';
 
@@ -410,6 +411,8 @@ class PlayerController extends ChangeNotifier {
   }
 
   AudioSource _source(Song song) {
+    final android = defaultTargetPlatform == TargetPlatform.android;
+    final cover = android ? MusicLibrary.coverUri(song) : null;
     return AudioSource.uri(
       song.uri,
       tag: MediaItem(
@@ -418,6 +421,10 @@ class PlayerController extends ChangeNotifier {
         artist: song.artist,
         album: song.album,
         duration: song.duration,
+        // A saved cover, else the song's own art through MediaStore.
+        artUri: cover ?? (android ? song.uri : null),
+        // A string: audio_service reads this key with getString.
+        extras: cover == null && android ? {'loadThumbnailUri': 'true'} : null,
       ),
     );
   }
@@ -485,6 +492,7 @@ class PlayerController extends ChangeNotifier {
           'title': song.title,
           'artist': song.artist,
           'uri': song.uri.toString(),
+          'fileName': song.fileName,
           'playing': player.playing,
         })
         .catchError((Object _) {});
