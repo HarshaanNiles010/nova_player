@@ -27,6 +27,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - For a song without lyrics, tap **Download lyrics** on Now Playing to fetch them from [LRCLIB](https://lrclib.net), synced when available. Only that song's title, artist, album and length are sent, and only when you tap.
 - **Translate** in the lyrics header shows English in italics under each line, in sync with the song; tap **Original only** to hide it. Translation runs on the phone (Google ML Kit), so lyrics never leave it; the first use of a language downloads its model (about 30 MB). Lyrics written in Latin letters, like romaji, cannot be translated. Settings → Translation languages lists the downloaded language packs; delete any of them to free space, and translating a song in that language downloads it again.
 - Downloaded lyrics are saved as `Song.lrc` and translations as `Song.en.lrc` next to the song, so each song is fetched or translated once and other players can use the files. This needs the lyrics folder (Settings → Lyrics folder) to be your music folder, for example `Music`, picked with write access; a folder picked before this showed as "read only" and must be picked again. Without one, they are kept in the app's storage.
+- For missing or wrong artwork, long-press a song and tap **Download cover art**. The album's front cover comes from the [Cover Art Archive](https://coverartarchive.org), found through [MusicBrainz](https://musicbrainz.org) by album and artist, or by the song's title when the album isn't found. Only the album, title and artist are sent, and only when you tap. The cover is saved as `Song.jpg` for every song of that album, in the same place as downloaded lyrics, and shows instead of the art inside the file.
 - In landscape, Now Playing shows the player on the left and lyrics on the right.
 
 **Playlists**
@@ -78,7 +79,7 @@ iPhone apps cannot read the whole phone, so Nova on iOS plays:
 - audio files you copy into the app (Finder → your iPhone → Files → Nova Player, or the Files app);
 - folders you pick in Settings → Music folders (On My iPhone, iCloud Drive or a USB drive). iCloud songs must be downloaded to the phone first.
 
-The Apple Music library is not used. Ogg and Opus files are skipped, since iOS cannot play them. Widgets, the equalizer, the lyrics folder picker and rescanning are Android only; lyrics come from tags or a `.lrc` file next to the song. Restoring a backup closes the app; open it again to load the restored settings.
+The Apple Music library is not used. Ogg and Opus files are skipped, since iOS cannot play them. Widgets, the equalizer, the lyrics folder picker, downloaded covers and rescanning are Android only; lyrics come from tags or a `.lrc` file next to the song. Restoring a backup closes the app; open it again to load the restored settings.
 
 To keep playing and queueing fast, the iPhone player loads 40 songs around the one playing and adds more as it goes. So "Up next" shows about the next 40 songs, and going back with previous or repeat-all reaches at most 40 songs before where you started playing.
 
@@ -167,9 +168,9 @@ Themes in the "Get more themes" screen come from [`themes/catalog.json`](themes/
 | `lib/lyrics_translation.dart` | On-device lyrics translation and the saved `.en.lrc` format |
 | `lib/translation_models_page.dart` | Listing and deleting downloaded translation language packs |
 | `lib/smart_playlists.dart` | Smart playlists and the genre-mix ranking |
-| `lib/theme.dart`, `lib/downloads.dart` | Themes and fonts, plus downloading them and lyrics from LRCLIB |
+| `lib/theme.dart`, `lib/downloads.dart` | Themes and fonts, plus downloading them, lyrics from LRCLIB and covers from MusicBrainz |
 | `lib/listening_history.dart`, `lib/stats_page.dart` | Play history and stats |
-| `android/app/src/main/kotlin/` | MediaStore scanning, extra folders, lyrics files and widgets |
+| `android/app/src/main/kotlin/` | MediaStore scanning, extra folders, lyrics and cover files, and widgets |
 | `ios/Runner/AppDelegate.swift` | iPhone library scan, picked folders, artwork, lyrics and file picker |
 | `themes/catalog.json` | Downloadable themes |
 | `tool/make_icon.py` | Generates the launcher icon |
