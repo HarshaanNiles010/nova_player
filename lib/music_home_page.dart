@@ -2883,7 +2883,10 @@ Future<void> showQueueSheet(BuildContext context, PlayerController controller) {
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (_) => _QueueSheet(controller: controller),
+    builder: (_) => DefaultTabController(
+      length: 2,
+      child: _QueueSheet(controller: controller),
+    ),
   );
 }
 
@@ -2925,101 +2928,130 @@ class _QueueSheet extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (controller.currentSong case final song?)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: ListTile(
-                      leading: NovaArtwork(song: song, size: 48),
-                      title: Text(
-                        controller.player.loopMode == LoopMode.one
-                            ? 'PLAYING NOW · ON REPEAT'
-                            : 'PLAYING NOW',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                      subtitle: Text(
-                        song.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                const Divider(height: 24),
+                const TabBar(
+                  tabs: [
+                    Tab(text: 'Queue'),
+                    Tab(text: 'Recently played'),
+                  ],
+                ),
                 Expanded(
-                  child: upNext.isEmpty
-                      ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(32),
-                            child: Text(
-                              'Nothing plays after this song. Swipe a song left or use its menu to queue it.',
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        )
-                      : CustomScrollView(
-                          slivers: [
-                            if (queue.isNotEmpty) ...[
-                              _queueHeading(
-                                context,
-                                'QUEUED · ${queue.length}',
+                  child: TabBarView(
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 8),
+                          if (controller.currentSong case final song?)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
                               ),
-                              // Long-press a queued song to drag it to a new position.
-                              SliverPadding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                                sliver: SliverReorderableList(
-                                  itemCount: queue.length,
-                                  onReorderItem: controller.moveUpcoming,
-                                  itemBuilder: (context, index) =>
-                                      ReorderableDelayedDragStartListener(
-                                        // Index key: the same song may be queued twice.
-                                        key: ValueKey(index),
-                                        index: index,
-                                        child: Material(
-                                          type: MaterialType.transparency,
-                                          child: _upNextTile(
-                                            context,
-                                            upNext,
-                                            index,
-                                            trailing: IconButton(
-                                              tooltip: 'Remove from queue',
-                                              onPressed: () => controller
-                                                  .removeUpcomingAt(index),
-                                              icon: const Icon(
-                                                Icons.close_rounded,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                ),
-                              ),
-                            ],
-                            if (upNext.length > queue.length) ...[
-                              _queueHeading(
-                                context,
-                                queue.isEmpty ? 'UP NEXT' : 'THEN',
-                              ),
-                              SliverPadding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                                sliver: SliverList.builder(
-                                  itemCount: upNext.length - queue.length,
-                                  itemBuilder: (context, index) => _upNextTile(
-                                    context,
-                                    upNext,
-                                    queue.length + index,
+                              child: ListTile(
+                                leading: NovaArtwork(song: song, size: 48),
+                                title: Text(
+                                  controller.player.loopMode == LoopMode.one
+                                      ? 'PLAYING NOW · ON REPEAT'
+                                      : 'PLAYING NOW',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.5,
                                   ),
                                 ),
+                                subtitle: Text(
+                                  song.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ],
-                          ],
-                        ),
+                            ),
+                          const Divider(height: 24),
+                          Expanded(
+                            child: upNext.isEmpty
+                                ? const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(32),
+                                      child: Text(
+                                        'Nothing plays after this song. Swipe a song left or use its menu to queue it.',
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  )
+                                : CustomScrollView(
+                                    slivers: [
+                                      if (queue.isNotEmpty) ...[
+                                        _queueHeading(
+                                          context,
+                                          'QUEUED · ${queue.length}',
+                                        ),
+                                        // Long-press a queued song to drag it to a new position.
+                                        SliverPadding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                          ),
+                                          sliver: SliverReorderableList(
+                                            itemCount: queue.length,
+                                            onReorderItem:
+                                                controller.moveUpcoming,
+                                            itemBuilder: (context, index) =>
+                                                ReorderableDelayedDragStartListener(
+                                                  // Index key: the same song may be queued twice.
+                                                  key: ValueKey(index),
+                                                  index: index,
+                                                  child: Material(
+                                                    type: MaterialType
+                                                        .transparency,
+                                                    child: _upNextTile(
+                                                      context,
+                                                      upNext,
+                                                      index,
+                                                      trailing: IconButton(
+                                                        tooltip:
+                                                            'Remove from queue',
+                                                        onPressed: () =>
+                                                            controller
+                                                                .removeUpcomingAt(
+                                                                  index,
+                                                                ),
+                                                        icon: const Icon(
+                                                          Icons.close_rounded,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                          ),
+                                        ),
+                                      ],
+                                      if (upNext.length > queue.length) ...[
+                                        _queueHeading(
+                                          context,
+                                          queue.isEmpty ? 'UP NEXT' : 'THEN',
+                                        ),
+                                        SliverPadding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                          ),
+                                          sliver: SliverList.builder(
+                                            itemCount:
+                                                upNext.length - queue.length,
+                                            itemBuilder: (context, index) =>
+                                                _upNextTile(
+                                                  context,
+                                                  upNext,
+                                                  queue.length + index,
+                                                ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                          ),
+                        ],
+                      ),
+                      _RecentlyPlayed(controller: controller),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -3064,6 +3096,65 @@ class _QueueSheet extends StatelessWidget {
       ),
       trailing: trailing,
       onTap: () => controller.playUpNext(index),
+    );
+  }
+}
+
+/// Songs played before, newest first, from the listening history.
+class _RecentlyPlayed extends StatefulWidget {
+  const _RecentlyPlayed({required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  State<_RecentlyPlayed> createState() => _RecentlyPlayedState();
+}
+
+class _RecentlyPlayedState extends State<_RecentlyPlayed> {
+  late final _history = ListeningHistory.instance.load();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<PlayRecord>>(
+      future: _history,
+      builder: (context, snapshot) {
+        final history = snapshot.data;
+        if (history == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final songs = recentlyPlayed(history, widget.controller.library);
+        if (songs.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Text(
+                'Songs you play will show up here.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          itemCount: songs.length,
+          itemBuilder: (context, index) {
+            final song = songs[index];
+            return ListTile(
+              leading: NovaArtwork(song: song, size: 46),
+              title: Text(
+                song.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                song.artist,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
