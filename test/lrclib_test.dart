@@ -23,4 +23,46 @@ void main() {
     expect(closestLrclibLyrics(results, 230), isNull);
     expect(closestLrclibLyrics(null, 200), isNull);
   });
+
+  test('cover lookup keeps confident MusicBrainz matches, each once', () {
+    expect(
+      releaseGroupIds({
+        'release-groups': [
+          {'id': 'album', 'score': 100},
+          {'id': 'weak', 'score': 60},
+        ],
+      }),
+      ['album'],
+    );
+    expect(
+      releaseGroupIds({
+        'recordings': [
+          {
+            'score': 100,
+            'releases': [
+              {
+                'release-group': {'id': 'lp'},
+              },
+              {
+                'release-group': {'id': 'lp'},
+              },
+              {
+                'release-group': {'id': 'single'},
+              },
+            ],
+          },
+          {
+            'score': 40,
+            'releases': [
+              {
+                'release-group': {'id': 'cover version'},
+              },
+            ],
+          },
+        ],
+      }),
+      ['lp', 'single'],
+    );
+    expect(releaseGroupIds('not json'), isEmpty);
+  });
 }

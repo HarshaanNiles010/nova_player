@@ -163,6 +163,73 @@ Future<String?> fetchLyrics(Song song) async {
   return closestLrclibLyrics(jsonDecode(utf8.decode(found)), seconds);
 }
 
+/// Front cover of [song]'s album from the Cover Art Archive, found through
+/// MusicBrainz by album, else by the song; null when there is none. Throws
+/// when either site cannot be reached.
+Future<Uint8List?> fetchCover(Song song) async {
+  // Without the artist, a title search matches too many other records.
+  if (song.artist == 'Unknown artist') return null;
+  final artist = 'artist:"${_phrase(song.artist)}"';
+  final searches = [
+    if (song.album != 'Unknown album')
+      ('release-group', 'releasegroup:"${_phrase(song.album)}" AND $artist'),
+    ('recording', 'recording:"${_phrase(song.title)}" AND $artist'),
+  ];
+  for (final (i, (entity, query)) in searches.indexed) {
+    // MusicBrainz allows one request per second.
+    if (i > 0) await Future<void>.delayed(const Duration(seconds: 1));
+    final found = await _get(
+      Uri.https('musicbrainz.org', '/ws/2/$entity/', {
+        'query': query,
+        'fmt': 'json',
+        'limit': '5',
+      }),
+    );
+    for (final id in releaseGroupIds(jsonDecode(utf8.decode(found))).take(3)) {
+      try {
+        return await _get(
+          Uri.https('coverartarchive.org', '/release-group/$id/front-500'),
+        );
+      } on HttpException {
+        // No front cover for this one; try the next match.
+      }
+    }
+  }
+  return null;
+}
+
+/// [text] inside a quoted MusicBrainz (Lucene) phrase.
+String _phrase(String text) =>
+    text.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+
+/// Release groups in a MusicBrainz release-group or recording search that
+/// score 90 or more, in order, each once.
+List<String> releaseGroupIds(Object? json) {
+  if (json is! Map<String, dynamic>) return const [];
+  final ids = <String>{};
+  for (final group in json['release-groups'] as List<dynamic>? ?? const []) {
+    if (group case {'id': final String id, 'score': final int score}
+        when score >= 90) {
+      ids.add(id);
+    }
+  }
+  for (final recording in json['recordings'] as List<dynamic>? ?? const []) {
+    if (recording
+        case {
+          'score': final int score,
+          'releases': final List<dynamic> releases,
+        }
+        when score >= 90) {
+      for (final release in releases) {
+        if (release case {'release-group': {'id': final String id}}) {
+          ids.add(id);
+        }
+      }
+    }
+  }
+  return ids.toList();
+}
+
 /// The lyrics of one LRCLIB record, synced first.
 String? lrclibLyrics(Object? record) {
   if (record is! Map<String, dynamic>) return null;
