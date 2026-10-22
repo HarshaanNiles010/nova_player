@@ -945,32 +945,35 @@ class NovaArtwork extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final pixels = (size * MediaQuery.devicePixelRatioOf(context)).round();
     return ExcludeSemantics(
-      child: FutureBuilder<Uint8List?>(
-        future: MusicLibrary().loadThumbnail(song.uri, pixels),
-        builder: (context, snapshot) {
-          final bytes = snapshot.data;
-          return Container(
-            width: size,
-            height: size,
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: colors.surfaceContainer,
-              border: Border.all(color: colors.outlineVariant),
-            ),
-            child: bytes == null
-                ? Icon(
-                    Icons.music_note_outlined,
-                    color: colors.onSurfaceVariant,
-                    size: size * 0.42,
-                  )
-                : Image.memory(
-                    bytes,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    cacheWidth: pixels,
-                  ),
-          );
-        },
+      child: ValueListenableBuilder(
+        valueListenable: MusicLibrary.artworkChanged,
+        builder: (context, _, _) => FutureBuilder<Uint8List?>(
+          future: MusicLibrary().loadThumbnail(song, pixels),
+          builder: (context, snapshot) {
+            final bytes = snapshot.data;
+            return Container(
+              width: size,
+              height: size,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: colors.surfaceContainer,
+                border: Border.all(color: colors.outlineVariant),
+              ),
+              child: bytes == null
+                  ? Icon(
+                      Icons.music_note_outlined,
+                      color: colors.onSurfaceVariant,
+                      size: size * 0.42,
+                    )
+                  : Image.memory(
+                      bytes,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      cacheWidth: pixels,
+                    ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -1578,33 +1581,36 @@ class _DeviceArtwork extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final pixels = (size * MediaQuery.devicePixelRatioOf(context)).round();
-    return FutureBuilder<Uint8List?>(
-      // Sized thumbnail: MediaStore caches it, unlike the full embedded image.
-      future: MusicLibrary().loadThumbnail(song.uri, pixels),
-      builder: (context, snapshot) {
-        final bytes = snapshot.data;
-        return Container(
-          width: size,
-          height: size,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: colors.surfaceContainer,
-            border: Border.all(color: colors.outlineVariant),
-          ),
-          child: bytes == null
-              ? Icon(
-                  Icons.album_outlined,
-                  color: colors.onSurfaceVariant,
-                  size: size * 0.24,
-                )
-              : Image.memory(
-                  bytes,
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  cacheWidth: pixels,
-                ),
-        );
-      },
+    return ValueListenableBuilder(
+      valueListenable: MusicLibrary.artworkChanged,
+      builder: (context, _, _) => FutureBuilder<Uint8List?>(
+        // Sized thumbnail: MediaStore caches it, unlike the full embedded image.
+        future: MusicLibrary().loadThumbnail(song, pixels),
+        builder: (context, snapshot) {
+          final bytes = snapshot.data;
+          return Container(
+            width: size,
+            height: size,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: colors.surfaceContainer,
+              border: Border.all(color: colors.outlineVariant),
+            ),
+            child: bytes == null
+                ? Icon(
+                    Icons.album_outlined,
+                    color: colors.onSurfaceVariant,
+                    size: size * 0.24,
+                  )
+                : Image.memory(
+                    bytes,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    cacheWidth: pixels,
+                  ),
+          );
+        },
+      ),
     );
   }
 }
@@ -2721,6 +2727,15 @@ Future<void> showSongActions(
                   ),
                 ),
               ListTile(
+                leading: const Icon(Icons.image_search_rounded),
+                title: const Text('Download cover art'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  notify('Looking for the cover of ${song.album}...');
+                  _downloadCover(song, player.library).then(notify);
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.album_outlined),
                 title: const Text('Go to album'),
                 subtitle: Text(song.album),
@@ -2740,6 +2755,28 @@ Future<void> showSongActions(
       );
     },
   );
+}
+
+/// Finds [song]'s cover and saves it for every song of its album in
+/// [library]; returns the message to show.
+Future<String> _downloadCover(Song song, List<Song> library) async {
+  try {
+    final cover = await fetchCover(song);
+    if (cover == null) return 'No cover found for ${song.album}.';
+    final album = song.album == 'Unknown album'
+        ? [song]
+        : [
+            for (final other in library)
+              if (other.album == song.album && other.artist == song.artist)
+                other,
+          ];
+    for (final track in album.isEmpty ? [song] : album) {
+      await MusicLibrary().saveCover(track, cover);
+    }
+    return 'Saved the cover of ${song.album}.';
+  } catch (_) {
+    return 'Could not reach MusicBrainz. Check your connection.';
+  }
 }
 
 /// Ticks/unticks playlists for [song]; stays open so several can be changed.

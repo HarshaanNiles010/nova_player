@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'song.dart';
@@ -9,6 +10,9 @@ class MusicLibrary {
   // shortcut: FIFO cap of small thumbnails, switch to an LRU if eviction churn shows.
   static const _thumbnailCacheLimit = 400;
   static final _thumbnails = <String, Future<Uint8List?>>{};
+
+  /// Bumped when a cover is saved, so artwork on screen reloads.
+  static final artworkChanged = ValueNotifier(0);
 
   Future<List<Song>> loadSongs() async {
     final result = await _channel.invokeMethod<List<dynamic>>('getSongs') ?? [];
@@ -137,9 +141,31 @@ class MusicLibrary {
     _lyrics.clear();
   }
 
-  /// Downscaled artwork of at least [size] pixels, cached across rebuilds.
-  Future<Uint8List?> loadThumbnail(Uri uri, int size) {
-    final key = '$uri@$size';
+  /// Saves a downloaded cover as "Song.jpg" for "Song.flac", next to the song
+  /// like lyrics (see [_store]); it then shows instead of the embedded one.
+  Future<void> saveCover(Song song, Uint8List bytes) async {
+    final name = '${_base(song)}.jpg';
+    final saved = await _channel
+        .invokeMethod<bool>('saveCover', {
+          'path': song.path,
+          'name': name,
+          'bytes': bytes,
+        })
+        .catchError((Object _) => false);
+    if (!(saved ?? false)) {
+      final files = await _channel.invokeMethod<String>('getFilesDir');
+      final file = File('$files/covers/$name');
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes(bytes);
+    }
+    _thumbnails.removeWhere((key, _) => key.startsWith('${song.uri}@'));
+    artworkChanged.value++;
+  }
+
+  /// Downscaled artwork of at least [size] pixels, cached across rebuilds:
+  /// a saved cover, else the one in the file.
+  Future<Uint8List?> loadThumbnail(Song song, int size) {
+    final key = '${song.uri}@$size';
     final cached = _thumbnails[key];
     if (cached != null) return cached;
     if (_thumbnails.length >= _thumbnailCacheLimit) {
@@ -147,7 +173,8 @@ class MusicLibrary {
     }
     return _thumbnails[key] = _channel
         .invokeMethod<Uint8List>('getArtwork', {
-          'uri': uri.toString(),
+          'uri': song.uri.toString(),
+          'fileName': song.fileName,
           'size': size,
         })
         .catchError((Object _) => null);
