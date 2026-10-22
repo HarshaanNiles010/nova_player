@@ -18,6 +18,7 @@ import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingDeque
@@ -77,7 +78,16 @@ class MainActivity : AudioServiceActivity() {
                     val name = call.argument<String>("name") ?: ""
                     val text = call.argument<String>("text") ?: ""
                     lyricsExecutor.execute {
-                        val saved = runCatching { lrcFolder.save(path, name, text) }.getOrDefault(false)
+                        val saved = runCatching { lrcFolder.save(path, name, text.toByteArray()) }.getOrDefault(false)
+                        runOnUiThread { result.success(saved) }
+                    }
+                }
+                "saveCover" -> {
+                    val path = call.argument<String>("path")
+                    val name = call.argument<String>("name") ?: ""
+                    val bytes = call.argument<ByteArray>("bytes") ?: ByteArray(0)
+                    lyricsExecutor.execute {
+                        val saved = runCatching { lrcFolder.save(path, name, bytes) }.getOrDefault(false)
                         runOnUiThread { result.success(saved) }
                     }
                 }
@@ -131,6 +141,7 @@ class MainActivity : AudioServiceActivity() {
                 }
                 "getArtwork" -> loadArtwork(
                     call.argument<String>("uri"),
+                    call.argument<String>("fileName"),
                     call.argument<Int>("size"),
                     result
                 )
@@ -139,12 +150,20 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
-    private fun loadArtwork(uriText: String?, size: Int?, result: MethodChannel.Result) {
+    private fun loadArtwork(uriText: String?, fileName: String?, size: Int?, result: MethodChannel.Result) {
         if (uriText.isNullOrBlank()) {
             result.error("INVALID_URI", "A song URI is required", null)
             return
         }
         artworkExecutor.execute {
+            // A saved cover wins over the embedded one, which may be missing or wrong.
+            savedCover(fileName)?.let { cover ->
+                val bytes = if (size == null) cover else thumbnail(cover, size)
+                if (bytes != null) {
+                    runOnUiThread { result.success(bytes) }
+                    return@execute
+                }
+            }
             if (size != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 // MediaStore caches thumbnails on disk, far cheaper than re-reading the file.
                 val thumbnail = try {
@@ -300,6 +319,14 @@ class MainActivity : AudioServiceActivity() {
             }
             runOnUiThread { result.success(lyrics) }
         }
+    }
+
+    /** "Song.jpg" in the lyrics folder, else in app storage, where Dart saves it as a fallback. */
+    private fun savedCover(fileName: String?): ByteArray? {
+        if (fileName.isNullOrEmpty()) return null
+        return runCatching { lrcFolder.coverFor(fileName) }.getOrNull()
+            ?: File(filesDir, "covers/${fileName.substringBeforeLast('.').replace('/', '_')}.jpg")
+                .takeIf { it.exists() }?.readBytes()
     }
 
     private fun thumbnail(bytes: ByteArray, size: Int): ByteArray? {

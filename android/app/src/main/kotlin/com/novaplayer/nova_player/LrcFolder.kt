@@ -9,9 +9,9 @@ import java.io.File
 
 /**
  * A folder the user picked through the system folder picker, searched (including
- * subfolders) for "<song file name without extension>.lrc". Only this folder is
- * reachable, so no broad storage permission is needed. Downloaded and translated
- * lyrics are saved into it, next to the song when the song is inside it.
+ * subfolders) for "<song file name without extension>.lrc" and covers ".jpg". Only
+ * this folder is reachable, so no broad storage permission is needed. Downloaded and
+ * translated lyrics and covers are saved into it, next to the song when it is inside it.
  */
 class LrcFolder(private val context: Context) {
     private val prefs = context.getSharedPreferences("nova_lyrics", Context.MODE_PRIVATE)
@@ -64,6 +64,13 @@ class LrcFolder(private val context: Context) {
         }
     }
 
+    /** A saved cover ("Song.jpg" for "Song.flac"), using the index only if it is already built. */
+    fun coverFor(fileName: String): ByteArray? {
+        val saved = synchronized(this) { index ?: loadSaved()?.also { index = it } } ?: return null
+        val uri = saved[fileName.substringBeforeLast('.').lowercase() + ".jpg"] ?: return null
+        return context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+    }
+
     /** Saved index, so lookups don't walk the folder (tens of seconds) each app run. */
     private val indexFile = File(context.filesDir, "lrc_index.tsv")
 
@@ -93,24 +100,24 @@ class LrcFolder(private val context: Context) {
     }
 
     /**
-     * Writes [text] as [name] (e.g. "Song.lrc") into the song's own folder when that is
+     * Writes [bytes] as [name] (e.g. "Song.lrc") into the song's own folder when that is
      * inside this folder, else into this folder; replaces a file of that name it already
      * indexed. False when no folder is set or it is read only.
      */
-    fun save(songPath: String?, name: String, text: String): Boolean {
+    fun save(songPath: String?, name: String, bytes: ByteArray): Boolean {
         val tree = treeUri ?: return false
         if (!writable()) return false
-        val key = name.substringBeforeLast('.').lowercase()
+        val key = keyOf(name)
         val treeDoc = DocumentsContract.getTreeDocumentId(tree)
         val songDir = songPath?.let(::documentIdOf)?.substringBeforeLast('/')
         val dir = songDir?.takeIf { it == treeDoc || it.startsWith("$treeDoc/") } ?: treeDoc
         val uri = indexOrBuild()[key] ?: DocumentsContract.createDocument(
             context.contentResolver,
             DocumentsContract.buildDocumentUriUsingTree(tree, dir),
-            "application/octet-stream", // keeps the .lrc name as given
+            "application/octet-stream", // keeps the name as given
             name,
         ) ?: return false
-        context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray()) }
+        context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
             ?: return false
         synchronized(this) {
             val updated = (index ?: emptyMap()) + (key to uri)
@@ -157,9 +164,11 @@ class LrcFolder(private val context: Context) {
                         val name = cursor.getString(1) ?: continue
                         if (cursor.getString(2) == Document.MIME_TYPE_DIR) {
                             pending.add(id)
-                        } else if (name.endsWith(".lrc", ignoreCase = true)) {
+                        } else if (name.endsWith(".lrc", ignoreCase = true) ||
+                            name.endsWith(".jpg", ignoreCase = true)
+                        ) {
                             found.putIfAbsent(
-                                name.dropLast(4).lowercase(),
+                                keyOf(name),
                                 DocumentsContract.buildDocumentUriUsingTree(tree, id),
                             )
                         }
@@ -182,5 +191,9 @@ class LrcFolder(private val context: Context) {
 
     private companion object {
         const val KEY = "tree_uri"
+
+        /** "song" for "Song.lrc", "song.en" for "Song.en.lrc", "song.jpg" for a cover. */
+        fun keyOf(name: String): String =
+            if (name.endsWith(".lrc", ignoreCase = true)) name.dropLast(4).lowercase() else name.lowercase()
     }
 }
