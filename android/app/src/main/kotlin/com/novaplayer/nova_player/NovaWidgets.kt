@@ -46,7 +46,8 @@ object NovaWidgets {
     private val worker = Executors.newSingleThreadExecutor()
 
     fun update(
-        context: Context, id: String, title: String, artist: String, uri: String, playing: Boolean
+        context: Context, id: String, title: String, artist: String, uri: String, fileName: String?,
+        playing: Boolean
     ) = worker.execute {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val previousId = prefs.getString("id", null)
@@ -70,7 +71,7 @@ object NovaWidgets {
             }
             editor.putString("id", id).putString("title", title).putString("artist", artist)
                 .putString("recent", updated.toString())
-            saveArtwork(context, uri)
+            saveArtwork(context, uri, fileName)
         }
         editor.apply()
         render(context)
@@ -78,9 +79,12 @@ object NovaWidgets {
 
     private fun artFile(context: Context) = File(context.filesDir, "widget_art.jpg")
 
-    private fun saveArtwork(context: Context, uri: String) {
+    private fun saveArtwork(context: Context, uri: String, fileName: String?) {
         val bitmap = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val cover = LrcFolder(context).savedCover(fileName)
+            if (cover != null) {
+                BitmapFactory.decodeByteArray(cover, 0, cover.size)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 context.contentResolver.loadThumbnail(Uri.parse(uri), Size(300, 300), null)
             } else {
                 val retriever = MediaMetadataRetriever()

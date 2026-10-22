@@ -18,7 +18,6 @@ import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingDeque
@@ -82,6 +81,17 @@ class MainActivity : AudioServiceActivity() {
                         runOnUiThread { result.success(saved) }
                     }
                 }
+                "getCovers" -> lyricsExecutor.execute {
+                    val covers = lrcFolder.allCovers()
+                    runOnUiThread { result.success(covers) }
+                }
+                "deleteCover" -> {
+                    val name = call.argument<String>("name") ?: ""
+                    lyricsExecutor.execute {
+                        val deleted = runCatching { lrcFolder.delete(name) }.getOrDefault(false)
+                        runOnUiThread { result.success(deleted) }
+                    }
+                }
                 "saveCover" -> {
                     val path = call.argument<String>("path")
                     val name = call.argument<String>("name") ?: ""
@@ -130,6 +140,7 @@ class MainActivity : AudioServiceActivity() {
                         call.argument<String>("title") ?: "",
                         call.argument<String>("artist") ?: "",
                         call.argument<String>("uri") ?: "",
+                        call.argument<String>("fileName"),
                         call.argument<Boolean>("playing") ?: false
                     )
                     result.success(null)
@@ -157,7 +168,7 @@ class MainActivity : AudioServiceActivity() {
         }
         artworkExecutor.execute {
             // A saved cover wins over the embedded one, which may be missing or wrong.
-            savedCover(fileName)?.let { cover ->
+            lrcFolder.savedCover(fileName)?.let { cover ->
                 val bytes = if (size == null) cover else thumbnail(cover, size)
                 if (bytes != null) {
                     runOnUiThread { result.success(bytes) }
@@ -319,14 +330,6 @@ class MainActivity : AudioServiceActivity() {
             }
             runOnUiThread { result.success(lyrics) }
         }
-    }
-
-    /** "Song.jpg" in the lyrics folder, else in app storage, where Dart saves it as a fallback. */
-    private fun savedCover(fileName: String?): ByteArray? {
-        if (fileName.isNullOrEmpty()) return null
-        return runCatching { lrcFolder.coverFor(fileName) }.getOrNull()
-            ?: File(filesDir, "covers/${fileName.substringBeforeLast('.').replace('/', '_')}.jpg")
-                .takeIf { it.exists() }?.readBytes()
     }
 
     private fun thumbnail(bytes: ByteArray, size: Int): ByteArray? {

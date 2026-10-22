@@ -14,6 +14,23 @@ import java.io.File
  * translated lyrics and covers are saved into it, next to the song when it is inside it.
  */
 class LrcFolder(private val context: Context) {
+    /** Covers Dart saved in app storage because no writable folder is set. */
+    private val appCovers = File(context.filesDir, "covers")
+
+    /** "Song.jpg" for [fileName] here, else in app storage. */
+    fun savedCover(fileName: String?): ByteArray? {
+        if (fileName.isNullOrEmpty()) return null
+        return runCatching { coverFor(fileName) }.getOrNull()
+            ?: File(appCovers, "${fileName.substringBeforeLast('.').replace('/', '_')}.jpg")
+                .takeIf { it.exists() }?.readBytes()
+    }
+
+    /** Every saved cover as a URI the notification can load, keyed like [covers]. */
+    fun allCovers(): Map<String, String> =
+        (appCovers.listFiles().orEmpty().filter { it.name.endsWith(".jpg") }
+            .associate { it.name.removeSuffix(".jpg").lowercase() to Uri.fromFile(it).toString() }) +
+            runCatching { covers().mapValues { it.value.toString() } }.getOrDefault(emptyMap())
+
     private val prefs = context.getSharedPreferences("nova_lyrics", Context.MODE_PRIVATE)
     private var index: Map<String, Uri>? = null
 
@@ -66,10 +83,30 @@ class LrcFolder(private val context: Context) {
 
     /** A saved cover ("Song.jpg" for "Song.flac"), using the index only if it is already built. */
     fun coverFor(fileName: String): ByteArray? {
-        val saved = synchronized(this) { index ?: loadSaved()?.also { index = it } } ?: return null
-        val uri = saved[fileName.substringBeforeLast('.').lowercase() + ".jpg"] ?: return null
+        val uri = cachedIndex()[fileName.substringBeforeLast('.').lowercase() + ".jpg"] ?: return null
         return context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
     }
+
+    /** Every cover in this folder, by lower-case song name without extension. */
+    fun covers(): Map<String, Uri> = cachedIndex()
+        .filterKeys { it.endsWith(".jpg") }
+        .mapKeys { it.key.removeSuffix(".jpg") }
+
+    /** Deletes the file saved as [name] (e.g. "Song.jpg"); false when there is none. */
+    fun delete(name: String): Boolean {
+        val key = keyOf(name)
+        val uri = cachedIndex()[key] ?: return false
+        if (!DocumentsContract.deleteDocument(context.contentResolver, uri)) return false
+        synchronized(this) {
+            val updated = (index ?: emptyMap()) - key
+            index = updated
+            saveIndex(updated)
+        }
+        return true
+    }
+
+    private fun cachedIndex(): Map<String, Uri> =
+        synchronized(this) { index ?: loadSaved()?.also { index = it } } ?: emptyMap()
 
     /** Saved index, so lookups don't walk the folder (tens of seconds) each app run. */
     private val indexFile = File(context.filesDir, "lrc_index.tsv")
