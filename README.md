@@ -16,6 +16,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Background playback with a media notification and lock-screen controls.
 - Queue with "play next" and "add to queue", shuffle and repeat, in two queue styles (Spotify and Strawberry).
 - The queue sheet on Now Playing shows queued songs and everything after them. Drag to reorder, tap a song to play it now.
+- A "Recently played" tab next to the queue lists the last 50 songs you played, newest first. Skipped songs are left out. Tap one to play it now without losing the queue.
 - Queued songs stay put when you shuffle (in the app, or from a car or Bluetooth device), jump to another song, or close the app.
 - Reopening the app brings back the last song, paused where you left it, with shuffle as you left it.
 - Sleep timer: pause after 15 to 60 minutes or at the end of the song, fading out over the last 10 seconds.
