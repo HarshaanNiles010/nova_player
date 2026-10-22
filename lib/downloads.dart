@@ -163,18 +163,22 @@ Future<String?> fetchLyrics(Song song) async {
   return closestLrclibLyrics(jsonDecode(utf8.decode(found)), seconds);
 }
 
-/// Front cover of [song]'s album from the Cover Art Archive, found through
-/// MusicBrainz by album, else by the song; null when there is none. Throws
-/// when either site cannot be reached.
-Future<Uint8List?> fetchCover(Song song) async {
+/// An album on MusicBrainz whose cover may be the one for a song.
+typedef CoverChoice = ({String id, String title});
+
+/// Albums whose cover may be [song]'s, found on MusicBrainz by album and
+/// artist, then by the song's title; best matches first. Throws when
+/// MusicBrainz cannot be reached.
+Future<List<CoverChoice>> findCovers(Song song) async {
   // Without the artist, a title search matches too many other records.
-  if (song.artist == 'Unknown artist') return null;
+  if (song.artist == 'Unknown artist') return const [];
   final artist = 'artist:"${_phrase(song.artist)}"';
   final searches = [
     if (song.album != 'Unknown album')
       ('release-group', 'releasegroup:"${_phrase(song.album)}" AND $artist'),
     ('recording', 'recording:"${_phrase(song.title)}" AND $artist'),
   ];
+  final choices = <String, CoverChoice>{};
   for (final (i, (entity, query)) in searches.indexed) {
     // MusicBrainz allows one request per second.
     if (i > 0) await Future<void>.delayed(const Duration(seconds: 1));
@@ -185,18 +189,19 @@ Future<Uint8List?> fetchCover(Song song) async {
         'limit': '5',
       }),
     );
-    for (final id in releaseGroupIds(jsonDecode(utf8.decode(found))).take(3)) {
-      try {
-        return await _get(
-          Uri.https('coverartarchive.org', '/release-group/$id/front-500'),
-        );
-      } on HttpException {
-        // No front cover for this one; try the next match.
-      }
+    for (final choice in releaseGroups(jsonDecode(utf8.decode(found)))) {
+      choices.putIfAbsent(choice.id, () => choice);
     }
   }
-  return null;
+  return choices.values.take(8).toList();
 }
+
+/// The front cover of [id] on the Cover Art Archive, [size] pixels wide.
+Uri coverUrl(String id, {int size = 500}) =>
+    Uri.https('coverartarchive.org', '/release-group/$id/front-$size');
+
+/// Throws [HttpException] when that album has no front cover.
+Future<Uint8List> downloadCover(String id) => _get(coverUrl(id));
 
 /// [text] inside a quoted MusicBrainz (Lucene) phrase.
 String _phrase(String text) =>
@@ -204,14 +209,17 @@ String _phrase(String text) =>
 
 /// Release groups in a MusicBrainz release-group or recording search that
 /// score 90 or more, in order, each once.
-List<String> releaseGroupIds(Object? json) {
+List<CoverChoice> releaseGroups(Object? json) {
   if (json is! Map<String, dynamic>) return const [];
-  final ids = <String>{};
-  for (final group in json['release-groups'] as List<dynamic>? ?? const []) {
-    if (group case {'id': final String id, 'score': final int score}
-        when score >= 90) {
-      ids.add(id);
+  final found = <String, CoverChoice>{};
+  void add(Object? group) {
+    if (group case {'id': final String id, 'title': final String title}) {
+      found.putIfAbsent(id, () => (id: id, title: title));
     }
+  }
+
+  for (final group in json['release-groups'] as List<dynamic>? ?? const []) {
+    if (group case {'score': final int score} when score >= 90) add(group);
   }
   for (final recording in json['recordings'] as List<dynamic>? ?? const []) {
     if (recording
@@ -221,13 +229,11 @@ List<String> releaseGroupIds(Object? json) {
         }
         when score >= 90) {
       for (final release in releases) {
-        if (release case {'release-group': {'id': final String id}}) {
-          ids.add(id);
-        }
+        if (release case {'release-group': final group}) add(group);
       }
     }
   }
-  return ids.toList();
+  return found.values.toList();
 }
 
 /// The lyrics of one LRCLIB record, synced first.

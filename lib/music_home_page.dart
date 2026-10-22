@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show HttpException;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -2731,10 +2732,18 @@ Future<void> showSongActions(
                 title: const Text('Download cover art'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  notify('Looking for the cover of ${song.album}...');
-                  _downloadCover(song, player.library).then(notify);
+                  _chooseCover(context, song, player.library, notify);
                 },
               ),
+              if (MusicLibrary.hasCover(song))
+                ListTile(
+                  leading: const Icon(Icons.hide_image_outlined),
+                  title: const Text('Remove downloaded cover'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _removeCover(song, player.library).then(notify);
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.album_outlined),
                 title: const Text('Go to album'),
@@ -2757,26 +2766,111 @@ Future<void> showSongActions(
   );
 }
 
-/// Finds [song]'s cover and saves it for every song of its album in
-/// [library]; returns the message to show.
-Future<String> _downloadCover(Song song, List<Song> library) async {
+/// Songs of [song]'s album in [library], which share its cover.
+List<Song> _albumOf(Song song, List<Song> library) {
+  if (song.album == 'Unknown album') return [song];
+  final album = [
+    for (final other in library)
+      if (other.album == song.album && other.artist == song.artist) other,
+  ];
+  return album.isEmpty ? [song] : album;
+}
+
+/// Lets the user pick [song]'s cover among the albums MusicBrainz finds and
+/// saves it for the whole album.
+Future<void> _chooseCover(
+  BuildContext context,
+  Song song,
+  List<Song> library,
+  void Function(String message) notify,
+) async {
+  notify('Looking for the cover of ${song.album}...');
+  final List<CoverChoice> choices;
   try {
-    final cover = await fetchCover(song);
-    if (cover == null) return 'No cover found for ${song.album}.';
-    final album = song.album == 'Unknown album'
-        ? [song]
-        : [
-            for (final other in library)
-              if (other.album == song.album && other.artist == song.artist)
-                other,
-          ];
-    for (final track in album.isEmpty ? [song] : album) {
+    choices = await findCovers(song);
+  } catch (_) {
+    return notify('Could not reach MusicBrainz. Check your connection.');
+  }
+  if (choices.isEmpty) return notify('No cover found for ${song.album}.');
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+  final choice = await showModalBottomSheet<CoverChoice>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetContext) => SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(sheetContext).height * 0.7,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: Text(
+                'Pick the cover',
+                style: Theme.of(sheetContext).textTheme.titleLarge,
+              ),
+            ),
+            Expanded(
+              child: GridView.count(
+                crossAxisCount: 2,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.8,
+                children: [
+                  for (final choice in choices)
+                    InkWell(
+                      onTap: () => Navigator.pop(sheetContext, choice),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 1,
+                            child: Image.network(
+                              coverUrl(choice.id, size: 250).toString(),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) =>
+                                  const Center(child: Text('No cover')),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            choice.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  if (choice == null) return;
+  try {
+    final cover = await downloadCover(choice.id);
+    for (final track in _albumOf(song, library)) {
       await MusicLibrary().saveCover(track, cover);
     }
-    return 'Saved the cover of ${song.album}.';
+    notify('Saved the cover of ${song.album}.');
+  } on HttpException {
+    notify('${choice.title} has no cover. Pick another.');
   } catch (_) {
-    return 'Could not reach MusicBrainz. Check your connection.';
+    notify('Could not download the cover. Check your connection.');
   }
+}
+
+/// Removes the saved cover from every song of [song]'s album.
+Future<String> _removeCover(Song song, List<Song> library) async {
+  for (final track in _albumOf(song, library)) {
+    if (MusicLibrary.hasCover(track)) await MusicLibrary().removeCover(track);
+  }
+  return 'Removed the downloaded cover of ${song.album}.';
 }
 
 /// Ticks/unticks playlists for [song]; stays open so several can be changed.

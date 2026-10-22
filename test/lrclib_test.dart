@@ -26,43 +26,32 @@ void main() {
 
   test('cover lookup keeps confident MusicBrainz matches, each once', () {
     expect(
-      releaseGroupIds({
+      releaseGroups({
         'release-groups': [
-          {'id': 'album', 'score': 100},
-          {'id': 'weak', 'score': 60},
+          {'id': 'album', 'title': 'Album', 'score': 100},
+          {'id': 'weak', 'title': 'Weak', 'score': 60},
         ],
       }),
-      ['album'],
+      [(id: 'album', title: 'Album')],
     );
+    Map<String, Object> release(String id) => {
+      'release-group': {'id': id, 'title': id.toUpperCase()},
+    };
     expect(
-      releaseGroupIds({
+      releaseGroups({
         'recordings': [
           {
             'score': 100,
-            'releases': [
-              {
-                'release-group': {'id': 'lp'},
-              },
-              {
-                'release-group': {'id': 'lp'},
-              },
-              {
-                'release-group': {'id': 'single'},
-              },
-            ],
+            'releases': [release('lp'), release('lp'), release('single')],
           },
           {
             'score': 40,
-            'releases': [
-              {
-                'release-group': {'id': 'cover version'},
-              },
-            ],
+            'releases': [release('cover version')],
           },
         ],
-      }),
+      }).map((choice) => choice.id),
       ['lp', 'single'],
     );
-    expect(releaseGroupIds('not json'), isEmpty);
+    expect(releaseGroups('not json'), isEmpty);
   });
 }
