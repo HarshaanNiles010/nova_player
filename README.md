@@ -11,6 +11,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Search by title, artist or album, group by artist, album, genre, year or format, and fast-scroll long lists.
 - Browse by folder.
 - Album art, with album and artist pages. Tap the artist or album name on Now Playing to open them.
+- Albums are grouped by their album artist tag, so two artists' "Greatest Hits" stay separate and a compilation stays one album. A song without the tag counts under its own artist. The tag is read on Android 11 and later.
 
 **Playback**
 - Background playback with a media notification and lock-screen controls.
@@ -23,7 +24,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Equalizer in Settings: one slider per band your phone offers, with Flat, Bass, Treble and Vocal presets. It is remembered across restarts.
 - Gapless playback between songs in the same format (sample rate and channels); a format change can leave a short gap.
 - A waveform seek bar on Now Playing.
-- Lyrics from the file's tags or a matching `.lrc` file. Synced lyrics follow the song.
+- Lyrics from the file's tags or a matching `.lrc` file. Synced lyrics follow the song. If they run ahead or behind, the **−** and **+** buttons in the lyrics header shift them 0.5 s earlier or later; the shift is saved for that song.
 - For a song without lyrics, tap **Download lyrics** on Now Playing to fetch them from [LRCLIB](https://lrclib.net), synced when available. Only that song's title, artist, album and length are sent, and only when you tap.
 - **Translate** in the lyrics header shows English in italics under each line, in sync with the song; tap **Original only** to hide it. Translation runs on the phone (Google ML Kit), so lyrics never leave it; the first use of a language downloads its model (about 30 MB). Lyrics written in Latin letters, like romaji, cannot be translated. Settings → Translation languages lists the downloaded language packs; delete any of them to free space, and translating a song in that language downloads it again.
 - Downloaded lyrics are saved as `Song.lrc` and translations as `Song.en.lrc` next to the song, so each song is fetched or translated once and other players can use the files. This needs the lyrics folder (Settings → Lyrics folder) to be your music folder, for example `Music`, picked with write access; a folder picked before this showed as "read only" and must be picked again. Without one, they are kept in the app's storage.
