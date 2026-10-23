@@ -397,9 +397,12 @@ class MainActivity : AudioServiceActivity() {
             MediaStore.Audio.Media.SIZE,
             MediaStore.Audio.Media.DATE_ADDED
         )
-        // The genre column only exists on Android 11+.
+        // The genre and album artist columns only exist on Android 11+.
         val hasGenre = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-        if (hasGenre) projection += MediaStore.Audio.Media.GENRE
+        if (hasGenre) {
+            projection += MediaStore.Audio.Media.GENRE
+            projection += MediaStore.Audio.Media.ALBUM_ARTIST
+        }
         // The file path (deprecated for writing, still filled in for reading),
         // and its folder: RELATIVE_PATH from Android 10, else from the path.
         @Suppress("DEPRECATION")
@@ -432,6 +435,8 @@ class MainActivity : AudioServiceActivity() {
                 val addedIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
                 val genreIndex =
                     if (hasGenre) cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.GENRE) else -1
+                val albumArtistIndex =
+                    if (hasGenre) cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ARTIST) else -1
                 @Suppress("DEPRECATION")
                 val pathIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
                 val relativePathIndex =
@@ -445,6 +450,7 @@ class MainActivity : AudioServiceActivity() {
                         "title" to cursor.getString(titleIndex),
                         "artist" to cursor.getString(artistIndex),
                         "album" to cursor.getString(albumIndex),
+                        "albumArtist" to if (albumArtistIndex >= 0) cursor.getString(albumArtistIndex) else null,
                         "duration" to cursor.getLong(durationIndex),
                         "fileName" to cursor.getString(fileNameIndex),
                         "mimeType" to cursor.getString(mimeTypeIndex),

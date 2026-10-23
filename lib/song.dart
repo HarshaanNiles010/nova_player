@@ -4,6 +4,7 @@ class Song {
     required this.title,
     required this.artist,
     required this.album,
+    String? albumArtist,
     required this.duration,
     required this.uri,
     required this.fileName,
@@ -14,7 +15,7 @@ class Song {
     this.size = 0,
     this.folder = '',
     this.path = '',
-  });
+  }) : albumArtist = albumArtist ?? artist;
 
   factory Song.fromMap(Map<String, dynamic> map) {
     String clean(Object? value, String fallback) {
@@ -22,11 +23,13 @@ class Song {
       return text.isEmpty || text == '<unknown>' ? fallback : text;
     }
 
+    final artist = clean(map['artist'], 'Unknown artist');
     return Song(
       id: map['id'].toString(),
       title: clean(map['title'], 'Unknown title'),
-      artist: clean(map['artist'], 'Unknown artist'),
+      artist: artist,
       album: clean(map['album'], 'Unknown album'),
+      albumArtist: clean(map['albumArtist'], artist),
       duration: Duration(milliseconds: (map['duration'] as num?)?.toInt() ?? 0),
       uri: Uri.parse(map['uri'].toString()),
       fileName: clean(map['fileName'], ''),
@@ -47,6 +50,10 @@ class Song {
   final String title;
   final String artist;
   final String album;
+
+  /// The album's artist tag, or [artist] when the file has none. Albums are
+  /// told apart by it, so two artists' "Greatest Hits" stay separate.
+  final String albumArtist;
   final Duration duration;
   final Uri uri;
   final String fileName;
@@ -66,6 +73,10 @@ class Song {
   /// Full file path, like "/storage/3738-3432/Music/song.flac" ('' if
   /// unknown).
   final String path;
+
+  /// Whether [other] is on the same album as this song.
+  bool sameAlbum(Song other) =>
+      other.album == album && other.albumArtist == albumArtist;
 
   /// Identifies the song across re-indexing, like [PlayRecord.songKey].
   String get key => fileName.isNotEmpty ? fileName : id;
