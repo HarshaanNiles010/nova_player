@@ -1316,6 +1316,14 @@ class _LyricsPanelState extends State<_LyricsPanel> {
   int _active = -1;
   bool _downloading = false;
 
+  /// How much later than their timestamps the lines are shown; saved per song.
+  Duration _offset = Duration.zero;
+
+  void _shift(int milliseconds) {
+    setState(() => _offset += Duration(milliseconds: milliseconds));
+    SettingsStore().saveLyricsOffset(widget.song, _offset);
+  }
+
   /// English under each line, while the translation is shown.
   List<String>? _english;
   bool _translating = false;
@@ -1409,15 +1417,21 @@ class _LyricsPanelState extends State<_LyricsPanel> {
     _active = -1;
     _english = null;
     late final Future<List<LyricLine>> lines;
-    lines = MusicLibrary().loadLyrics(widget.song).then((raw) {
-      final parsed = raw == null ? const <LyricLine>[] : parseLyrics(raw);
-      // An older load finishing last (shuffle can switch songs and back) must
-      // not replace the keys of the lines on screen.
-      if (identical(_lines, lines)) {
-        _keys = List.generate(parsed.length, (_) => GlobalKey());
-      }
-      return parsed;
-    });
+    lines =
+        (
+          MusicLibrary().loadLyrics(widget.song),
+          SettingsStore().loadLyricsOffset(widget.song),
+        ).wait.then((loaded) {
+          final (raw, offset) = loaded;
+          final parsed = raw == null ? const <LyricLine>[] : parseLyrics(raw);
+          // An older load finishing last (shuffle can switch songs and back) must
+          // not replace the keys or offset of the lines on screen.
+          if (identical(_lines, lines)) {
+            _keys = List.generate(parsed.length, (_) => GlobalKey());
+            _offset = offset;
+          }
+          return parsed;
+        });
     _lines = lines;
   }
 
@@ -1479,7 +1493,10 @@ class _LyricsPanelState extends State<_LyricsPanel> {
               : const Stream.empty(),
           builder: (context, position) {
             final active = synced
-                ? activeLyricIndex(lines, position.data ?? Duration.zero)
+                ? activeLyricIndex(
+                    lines,
+                    (position.data ?? Duration.zero) - _offset,
+                  )
                 : -1;
             if (active != _active) {
               _active = active;
@@ -1500,6 +1517,25 @@ class _LyricsPanelState extends State<_LyricsPanel> {
                       style: const TextStyle(fontSize: 12, letterSpacing: 2.4),
                     ),
                     const Spacer(),
+                    if (synced) ...[
+                      IconButton(
+                        tooltip: 'Lyrics earlier',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _shift(-500),
+                        icon: const Icon(Icons.remove_rounded, size: 18),
+                      ),
+                      Text(
+                        '${_offset.isNegative ? '' : '+'}'
+                        '${(_offset.inMilliseconds / 1000).toStringAsFixed(1)}s',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      IconButton(
+                        tooltip: 'Lyrics later',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _shift(500),
+                        icon: const Icon(Icons.add_rounded, size: 18),
+                      ),
+                    ],
                     TextButton.icon(
                       onPressed: _translating ? null : () => _translate(lines),
                       icon: _translating
@@ -1524,7 +1560,14 @@ class _LyricsPanelState extends State<_LyricsPanel> {
                     key: _keys[i],
                     onTap: lines[i].time == null
                         ? null
-                        : () => widget.controller.player.seek(lines[i].time),
+                        : () => widget.controller.player.seek(
+                            Duration(
+                              milliseconds: math.max(
+                                0,
+                                (lines[i].time! + _offset).inMilliseconds,
+                              ),
+                            ),
+                          ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       child: AnimatedDefaultTextStyle(

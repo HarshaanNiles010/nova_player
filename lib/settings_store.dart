@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'group_by.dart';
 import 'queue_mode.dart';
+import 'song.dart';
 
 class SettingsStore {
   static const _queueModeKey = 'queue_mode';
@@ -20,6 +21,24 @@ class SettingsStore {
   static const _downloadedFontsKey = 'downloaded_fonts';
   static const _eqEnabledKey = 'eq_enabled';
   static const _eqGainsKey = 'eq_gains';
+  static const _lyricsOffsetKey = 'lyrics_offset_';
+
+  /// How much later than their timestamps [song]'s lyrics are shown.
+  Future<Duration> loadLyricsOffset(Song song) async => Duration(
+    milliseconds:
+        (await SharedPreferences.getInstance()).getInt(
+          '$_lyricsOffsetKey${song.key}',
+        ) ??
+        0,
+  );
+
+  Future<void> saveLyricsOffset(Song song, Duration offset) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = '$_lyricsOffsetKey${song.key}';
+    offset == Duration.zero
+        ? await prefs.remove(key)
+        : await prefs.setInt(key, offset.inMilliseconds);
+  }
 
   /// Whether the equalizer is on, and each band's gain in dB.
   Future<(bool, List<double>)> loadEqualizer() async {
