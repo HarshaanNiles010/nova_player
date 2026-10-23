@@ -1137,7 +1137,7 @@ class NowPlayingPage extends StatelessWidget {
                         context,
                         controller,
                         song.album,
-                        (other) => other.album == song.album,
+                        song.sameAlbum,
                       ),
                       child: Text(song.album),
                     ),
@@ -1930,9 +1930,13 @@ class AlbumsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return _GroupedLibraryPage(
       title: 'Albums',
-      groups: groupSongs(songs, (song) => song.album),
+      groups: groupSongs(
+        songs,
+        (song) => '${song.album}\u0000${song.albumArtist}',
+      ),
       player: player,
-      detail: (tracks) => tracks.first.artist,
+      name: (tracks) => tracks.first.album,
+      detail: (tracks) => tracks.first.albumArtist,
     );
   }
 }
@@ -1950,7 +1954,10 @@ class ArtistsPage extends StatelessWidget {
       groups: groupSongs(songs, (song) => song.artist),
       player: player,
       detail: (tracks) {
-        final albums = tracks.map((song) => song.album).toSet().length;
+        final albums = tracks
+            .map((song) => (song.album, song.albumArtist))
+            .toSet()
+            .length;
         return '$albums ${albums == 1 ? 'album' : 'albums'}';
       },
     );
@@ -1987,12 +1994,16 @@ class _GroupedLibraryPage extends StatelessWidget {
     required this.groups,
     required this.player,
     required this.detail,
+    this.name,
   });
 
   final String title;
   final Map<String, List<Song>> groups;
   final PlayerController player;
   final String Function(List<Song> tracks) detail;
+
+  /// A group's name when it is not its key.
+  final String Function(List<Song> tracks)? name;
 
   @override
   Widget build(BuildContext context) {
@@ -2024,11 +2035,12 @@ class _GroupedLibraryPage extends StatelessWidget {
               itemBuilder: (context, index) {
                 final entry = groups.entries.elementAt(index);
                 final tracks = entry.value;
+                final label = name?.call(tracks) ?? entry.key;
                 return InkWell(
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => SongCollectionPage(
-                        title: entry.key,
+                        title: label,
                         subtitle: _trackCount(tracks.length),
                         songs: tracks,
                         player: player,
@@ -2053,7 +2065,7 @@ class _GroupedLibraryPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        entry.key,
+                        label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w500),
@@ -2748,8 +2760,7 @@ Future<void> showSongActions(
                 leading: const Icon(Icons.album_outlined),
                 title: const Text('Go to album'),
                 subtitle: Text(song.album),
-                onTap: () =>
-                    open(song.album, (other) => other.album == song.album),
+                onTap: () => open(song.album, song.sameAlbum),
               ),
               ListTile(
                 leading: const Icon(Icons.person_outline_rounded),
@@ -2771,7 +2782,7 @@ List<Song> _albumOf(Song song, List<Song> library) {
   if (song.album == 'Unknown album') return [song];
   final album = [
     for (final other in library)
-      if (other.album == song.album && other.artist == song.artist) other,
+      if (song.sameAlbum(other)) other,
   ];
   return album.isEmpty ? [song] : album;
 }

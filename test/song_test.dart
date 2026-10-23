@@ -26,6 +26,25 @@ void main() {
     expect(song.genre, 'Unknown genre');
   });
 
+  test('albums are told apart by album artist, else by artist', () {
+    Song song(String artist, String? albumArtist) => Song.fromMap({
+      'id': artist,
+      'artist': artist,
+      'albumArtist': albumArtist,
+      'album': 'Greatest Hits',
+      'uri': 'content://media/$artist',
+    });
+    final queen = song('Queen', null);
+    final abba = song('ABBA', '');
+    final duet = song('Queen & David Bowie', 'Queen');
+
+    expect(queen.albumArtist, 'Queen');
+    expect(abba.albumArtist, 'ABBA');
+    expect(queen.sameAlbum(abba), isFalse);
+    expect(queen.sameAlbum(duet), isTrue);
+    expect(GroupBy.album.keyFor(duet), 'Greatest Hits · Queen');
+  });
+
   test('groups songs by key in sorted order, keeping song order', () {
     Song song(String id, String title, Object? year, String? genre) =>
         Song.fromMap({

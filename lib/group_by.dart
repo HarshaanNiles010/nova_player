@@ -15,7 +15,7 @@ extension GroupByDetails on GroupBy {
   String keyFor(Song song) => switch (this) {
     GroupBy.none => '',
     GroupBy.artist => song.artist,
-    GroupBy.album => song.album,
+    GroupBy.album => '${song.album} · ${song.albumArtist}',
     GroupBy.genre => song.genre,
     GroupBy.year => song.year,
     GroupBy.format => song.format,

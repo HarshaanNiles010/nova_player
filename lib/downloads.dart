@@ -173,9 +173,13 @@ Future<List<CoverChoice>> findCovers(Song song) async {
   // Without the artist, a title search matches too many other records.
   if (song.artist == 'Unknown artist') return const [];
   final artist = 'artist:"${_phrase(song.artist)}"';
+  final albumArtist = 'artist:"${_phrase(song.albumArtist)}"';
   final searches = [
     if (song.album != 'Unknown album')
-      ('release-group', 'releasegroup:"${_phrase(song.album)}" AND $artist'),
+      (
+        'release-group',
+        'releasegroup:"${_phrase(song.album)}" AND $albumArtist',
+      ),
     ('recording', 'recording:"${_phrase(song.title)}" AND $artist'),
   ];
   final choices = <String, CoverChoice>{};
