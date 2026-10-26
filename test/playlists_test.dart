@@ -42,4 +42,14 @@ void main() {
     expect(store.songsOf('Fav', library).map((s) => s.id), ['2', '1']);
     expect(store.lengthOf('Fav'), 3);
   });
+
+  test('several songs are added once each and removed together', () async {
+    final store = PlaylistStore.instance
+      ..restore('{"Mix": [{"id": "1", "file": "a"}]}');
+    final library = [song('1', 'a'), song('2', 'b'), song('3', 'c')];
+    await store.addAll('Mix', library);
+    expect(store.lengthOf('Mix'), 3);
+    await store.removeAll('Mix', library.take(2));
+    expect(store.songsOf('Mix', library).map((s) => s.id), ['3']);
+  });
 }

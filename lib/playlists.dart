@@ -92,10 +92,14 @@ class PlaylistStore extends ChangeNotifier {
     );
   }
 
-  Future<void> add(String name, Song song) async {
+  Future<void> add(String name, Song song) => addAll(name, [song]);
+
+  Future<void> addAll(String name, Iterable<Song> songs) async {
     final entries = _playlists.putIfAbsent(name, () => []);
-    if (!entries.any((entry) => entry.matches(song))) {
-      entries.add(PlaylistEntry.of(song));
+    for (final song in songs) {
+      if (!entries.any((entry) => entry.matches(song))) {
+        entries.add(PlaylistEntry.of(song));
+      }
     }
     await _save();
   }
@@ -117,8 +121,10 @@ class PlaylistStore extends ChangeNotifier {
     await _save();
   }
 
-  Future<void> remove(String name, Song song) async {
-    _playlists[name]?.removeWhere((entry) => entry.matches(song));
+  Future<void> remove(String name, Song song) => removeAll(name, [song]);
+
+  Future<void> removeAll(String name, Iterable<Song> songs) async {
+    _playlists[name]?.removeWhere((entry) => songs.any(entry.matches));
     await _save();
   }
 
