@@ -60,6 +60,14 @@ class MusicLibrary {
   /// Has Android re-index all storage; call [loadSongs] afterwards.
   Future<void> rescanStorage() => _channel.invokeMethod<void>('rescanStorage');
 
+  /// Deletes the files of [songs] after the phone asks the user; false when
+  /// they say no.
+  Future<bool> deleteSongs(List<Song> songs) async =>
+      await _channel.invokeMethod<bool>('deleteSongs', {
+        'uris': [for (final song in songs) song.uri.toString()],
+      }) ??
+      false;
+
   /// Lets the user pick where to save [text]; false when cancelled.
   Future<bool> saveTextFile(String name, String mimeType, String text) async =>
       await _channel.invokeMethod<String>('saveTextFile', {
