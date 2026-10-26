@@ -12,6 +12,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Browse by folder.
 - Album art, with album and artist pages. Tap the artist or album name on Now Playing to open them.
 - Albums are grouped by their album artist tag, so two artists' "Greatest Hits" stay separate and a compilation stays one album. A song without the tag counts under its own artist. The tag is read on Android 11 and later.
+- Fix a wrong title, artist or album with **Edit tags** in a song's menu. The fix is saved in Nova (and in backups), not written into the file, so other apps keep the old tags and nothing can damage your music. **Reset** in the same dialog goes back to the file's tags.
 
 **Playback**
 - Background playback with a media notification and lock-screen controls.
