@@ -33,8 +33,8 @@ class MusicLibrary {
     _covers = found ?? const {};
   }
 
-  /// Bumped when tags are edited, so the library reloads with them.
-  static final tagsChanged = ValueNotifier(0);
+  /// Bumped when tags are edited or files trashed, so the library reloads.
+  static final libraryChanged = ValueNotifier(0);
 
   /// Title, artist and album fixed in the app, applied over the files' tags.
   static var _tagEdits = <String, Map<String, String>>{};
@@ -45,13 +45,17 @@ class MusicLibrary {
   static bool hasEditedTags(Song song) =>
       _tagEdits.containsKey(_tagKeyOf(song));
 
-  /// Saves [tags] (title, artist, album) for [song]; null goes back to the
-  /// file's own tags.
-  Future<void> saveTags(Song song, Map<String, String>? tags) async {
-    final key = _tagKeyOf(song);
-    tags == null ? _tagEdits.remove(key) : _tagEdits[key] = tags;
+  /// Saves [changes] (by [Song.fromMap] key, like 'album') over each of
+  /// [songs]' earlier edits; null goes back to the files' own tags.
+  Future<void> editTags(List<Song> songs, Map<String, String>? changes) async {
+    for (final song in songs) {
+      final key = _tagKeyOf(song);
+      changes == null
+          ? _tagEdits.remove(key)
+          : _tagEdits[key] = {...?_tagEdits[key], ...changes};
+    }
     await SettingsStore().saveTagEdits(_tagEdits);
-    tagsChanged.value++;
+    libraryChanged.value++;
   }
 
   Future<List<Song>> loadSongs() async {
@@ -86,13 +90,19 @@ class MusicLibrary {
   /// Has Android re-index all storage; call [loadSongs] afterwards.
   Future<void> rescanStorage() => _channel.invokeMethod<void>('rescanStorage');
 
-  /// Deletes the files of [songs] after the phone asks the user; false when
-  /// they say no.
-  Future<bool> deleteSongs(List<Song> songs) async =>
-      await _channel.invokeMethod<bool>('deleteSongs', {
-        'uris': [for (final song in songs) song.uri.toString()],
-      }) ??
-      false;
+  /// Moves the files of [songs] to the phone's trash after it asks the
+  /// user, or with [restore] brings them back; false when they say no.
+  /// Android deletes trashed files for good after 30 days.
+  Future<bool> trashSongs(List<Song> songs, {bool restore = false}) async {
+    final done =
+        await _channel.invokeMethod<bool>('trashSongs', {
+          'uris': [for (final song in songs) song.uri.toString()],
+          'trash': !restore,
+        }) ??
+        false;
+    if (done) libraryChanged.value++;
+    return done;
+  }
 
   /// Lets the user pick where to save [text]; false when cancelled.
   Future<bool> saveTextFile(String name, String mimeType, String text) async =>

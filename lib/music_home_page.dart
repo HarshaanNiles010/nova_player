@@ -41,7 +41,8 @@ class MusicHomePage extends StatefulWidget {
   State<MusicHomePage> createState() => _MusicHomePageState();
 }
 
-class _MusicHomePageState extends State<MusicHomePage> {
+class _MusicHomePageState extends State<MusicHomePage>
+    with _SongSelection<MusicHomePage> {
   final _library = MusicLibrary();
   final _player = PlayerController();
   final _settings = SettingsStore();
@@ -64,6 +65,12 @@ class _MusicHomePageState extends State<MusicHomePage> {
   /// Playback order matching the list on screen; cached so playAt keeps the
   /// same instance and does not reload the player on every tap.
   List<Song> _playOrder = const [];
+
+  @override
+  List<Song> get selectableSongs => _rows.whereType<Song>().toList();
+
+  @override
+  PlayerController get selectionPlayer => _player;
 
   void _updatePlayOrder() {
     _playOrder = _groupBy == GroupBy.none
@@ -107,7 +114,7 @@ class _MusicHomePageState extends State<MusicHomePage> {
   @override
   void initState() {
     super.initState();
-    MusicLibrary.tagsChanged.addListener(_reloadSongs);
+    MusicLibrary.libraryChanged.addListener(_reloadSongs);
     _initialize();
   }
 
@@ -243,101 +250,6 @@ class _MusicHomePageState extends State<MusicHomePage> {
     });
   }
 
-  /// Ids of the ticked songs; selecting while not empty.
-  final Set<String> _selectedIds = {};
-
-  void _toggleSelected(Song song) => setState(() {
-    if (!_selectedIds.remove(song.id)) _selectedIds.add(song.id);
-  });
-
-  /// The ticked songs in list order; clears the selection.
-  List<Song> _takeSelection() {
-    final songs = [
-      for (final song in _playOrder)
-        if (_selectedIds.contains(song.id)) song,
-    ];
-    setState(_selectedIds.clear);
-    return songs;
-  }
-
-  Future<void> _queueSelection() async {
-    final songs = _takeSelection();
-    try {
-      for (final song in songs) {
-        await _player.addToQueue(song);
-      }
-      _showMessage('Added ${_songCount(songs.length)} to queue');
-    } catch (_) {
-      _showMessage('Could not update the queue.');
-    }
-  }
-
-  Future<void> _deleteSelection() async {
-    final songs = [
-      for (final song in _playOrder)
-        if (_selectedIds.contains(song.id)) song,
-    ];
-    try {
-      if (!await _library.deleteSongs(songs)) return;
-    } on PlatformException catch (error) {
-      return _showMessage(error.message ?? 'Could not delete the songs.');
-    } catch (_) {
-      return _showMessage('Could not delete the songs.');
-    }
-    _selectedIds.clear();
-    final deleted = {for (final song in songs) song.id};
-    _allSongs = [
-      for (final song in _allSongs)
-        if (!deleted.contains(song.id)) song,
-    ];
-    await _showSongs();
-    _showMessage('Deleted ${_songCount(songs.length)}');
-  }
-
-  static String _songCount(int count) => count == 1 ? '1 song' : '$count songs';
-
-  Widget _buildSelectionBar() {
-    final visible = _visibleSongs;
-    return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: [
-            IconButton(
-              tooltip: 'Cancel selection',
-              onPressed: () => setState(_selectedIds.clear),
-              icon: const Icon(Icons.close_rounded),
-            ),
-            Expanded(child: Text('${_selectedIds.length} selected')),
-            IconButton(
-              tooltip: 'Select all',
-              onPressed: () => setState(
-                () => _selectedIds.addAll(visible.map((song) => song.id)),
-              ),
-              icon: const Icon(Icons.select_all_rounded),
-            ),
-            IconButton(
-              tooltip: 'Add to queue',
-              onPressed: _queueSelection,
-              icon: const Icon(Icons.queue_music_rounded),
-            ),
-            IconButton(
-              tooltip: 'Add to playlist',
-              onPressed: () => showAddToPlaylist(context, _takeSelection()),
-              icon: const Icon(Icons.playlist_add_rounded),
-            ),
-            IconButton(
-              tooltip: 'Delete from phone',
-              onPressed: _deleteSelection,
-              icon: const Icon(Icons.delete_outline_rounded),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _openDuplicates() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -418,7 +330,7 @@ class _MusicHomePageState extends State<MusicHomePage> {
 
   @override
   void dispose() {
-    MusicLibrary.tagsChanged.removeListener(_reloadSongs);
+    MusicLibrary.libraryChanged.removeListener(_reloadSongs);
     _positionSaver?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
@@ -428,14 +340,7 @@ class _MusicHomePageState extends State<MusicHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      // Back leaves selection before it leaves the app.
-      canPop: _selectedIds.isEmpty,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) setState(_selectedIds.clear);
-      },
-      child: _buildScaffold(),
-    );
+    return selectionScope(_buildScaffold());
   }
 
   Widget _buildScaffold() {
@@ -575,8 +480,8 @@ class _MusicHomePageState extends State<MusicHomePage> {
                 ],
               ),
             ),
-            if (_selectedIds.isNotEmpty)
-              _buildSelectionBar()
+            if (selecting)
+              selectionBar()
             else
               AnimatedBuilder(
                 animation: _player,
@@ -671,17 +576,13 @@ class _MusicHomePageState extends State<MusicHomePage> {
               );
             }
             final song = row as Song;
-            final selecting = _selectedIds.isNotEmpty;
             return SongTile(
               song: song,
               active: _player.currentSong?.id == song.id,
-              selected: selecting ? _selectedIds.contains(song.id) : null,
-              onTap: () => selecting ? _toggleSelected(song) : _play(song),
+              selected: selecting ? selectedIds.contains(song.id) : null,
+              onTap: () => selecting ? toggleSelected(song) : _play(song),
               onQueue: () => _addToQueue(song),
-              onLongPress: () {
-                HapticFeedback.selectionClick();
-                _toggleSelected(song);
-              },
+              onLongPress: () => toggleSelected(song),
               onActions: () =>
                   showSongActions(context, song: song, player: _player),
             );
@@ -2293,7 +2194,7 @@ class _GroupedLibraryPage extends StatelessWidget {
   }
 }
 
-class SongCollectionPage extends StatelessWidget {
+class SongCollectionPage extends StatefulWidget {
   const SongCollectionPage({
     super.key,
     required this.title,
@@ -2309,44 +2210,87 @@ class SongCollectionPage extends StatelessWidget {
   final List<Song> songs;
   final PlayerController player;
 
-  /// Set when showing a playlist, so long-press offers "Remove from playlist".
+  /// Set when showing a playlist, so songs can be removed from it.
   final String? playlist;
   final List<Widget> actions;
 
   @override
+  State<SongCollectionPage> createState() => _SongCollectionPageState();
+}
+
+class _SongCollectionPageState extends State<SongCollectionPage>
+    with _SongSelection<SongCollectionPage> {
+  @override
+  String? get selectionPlaylist => widget.playlist;
+
+  @override
+  List<Song> get selectableSongs => _songs;
+
+  @override
+  PlayerController get selectionPlayer => widget.player;
+
+  (List<Song>, List<Song>, List<Song>)? _cache;
+
+  /// The page's songs as the library has them now: with edited tags, and
+  /// without trashed files.
+  List<Song> get _songs {
+    final library = widget.player.library;
+    if (_cache case (final songs, final from, final fresh)
+        when identical(songs, widget.songs) && identical(from, library)) {
+      return fresh;
+    }
+    final byId = {for (final song in library) song.id: song};
+    final fresh = [for (final song in widget.songs) ?byId[song.id]];
+    _cache = (widget.songs, library, fresh);
+    return fresh;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: widget.player,
+      builder: (context, _) => selectionScope(_buildScaffold(_songs)),
+    );
+  }
+
+  Widget _buildScaffold(List<Song> songs) {
+    final playlist = widget.playlist;
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          title.toUpperCase(),
+          widget.title.toUpperCase(),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 14, letterSpacing: 1.6),
         ),
-        actions: actions,
+        actions: widget.actions,
       ),
-      body: playlist == null
+      bottomNavigationBar: selecting ? selectionBar() : null,
+      body: songs.isEmpty
+          ? const Center(child: Text('No songs left here.'))
+          : playlist == null
           ? ListView.builder(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 32),
               itemCount: songs.length + 1,
-              itemBuilder: (context, index) =>
-                  index == 0 ? _header(context) : _tile(context, index - 1),
+              itemBuilder: (context, index) => index == 0
+                  ? _header(context, songs)
+                  : _tile(context, songs, index - 1),
             )
-          // Drag handles, since long-press already opens the song menu.
+          // Drag handles, since long-press already selects.
           : ReorderableListView.builder(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 32),
-              header: _header(context),
+              header: _header(context, songs),
               buildDefaultDragHandles: false,
               itemCount: songs.length,
               onReorderItem: (from, to) {
                 final ordered = [...songs];
                 ordered.insert(to, ordered.removeAt(from));
-                PlaylistStore.instance.reorder(playlist!, ordered);
+                PlaylistStore.instance.reorder(playlist, ordered);
               },
               itemBuilder: (context, index) => Row(
                 key: ValueKey(songs[index].id),
                 children: [
-                  Expanded(child: _tile(context, index)),
+                  Expanded(child: _tile(context, songs, index)),
                   ReorderableDragStartListener(
                     index: index,
                     child: const Padding(
@@ -2360,7 +2304,7 @@ class SongCollectionPage extends StatelessWidget {
     );
   }
 
-  Widget _header(BuildContext context) => Padding(
+  Widget _header(BuildContext context, List<Song> songs) => Padding(
     padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
     child: Row(
       children: [
@@ -2368,7 +2312,7 @@ class SongCollectionPage extends StatelessWidget {
         const SizedBox(width: 18),
         Expanded(
           child: Text(
-            subtitle.toUpperCase(),
+            widget.subtitle.toUpperCase(),
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 11,
@@ -2380,12 +2324,15 @@ class SongCollectionPage extends StatelessWidget {
     ),
   );
 
-  Widget _tile(BuildContext context, int index) {
+  Widget _tile(BuildContext context, List<Song> songs, int index) {
     final song = songs[index];
+    final player = widget.player;
     return SongTile(
       song: song,
       active: player.currentSong?.id == song.id,
+      selected: selecting ? selectedIds.contains(song.id) : null,
       onTap: () async {
+        if (selecting) return toggleSelected(song);
         // Next/previous follow this page's order, not the whole library.
         await player.playAt(index, order: songs);
         if (context.mounted) {
@@ -2397,11 +2344,12 @@ class SongCollectionPage extends StatelessWidget {
         }
       },
       onQueue: () => player.addToQueue(song),
-      onLongPress: () => showSongActions(
+      onLongPress: () => toggleSelected(song),
+      onActions: () => showSongActions(
         context,
         song: song,
         player: player,
-        playlist: playlist,
+        playlist: widget.playlist,
       ),
     );
   }
@@ -2530,7 +2478,8 @@ class PlaylistsPage extends StatelessWidget {
             return const _LibraryMessage(
               icon: Icons.library_music_rounded,
               title: 'No playlists yet',
-              message: 'Long-press any song and choose Add to playlist.',
+              message:
+                  'Long-press songs to select them, then tap Add to playlist.',
             );
           }
           return ListView(
@@ -2564,7 +2513,7 @@ class PlaylistsPage extends StatelessWidget {
                               body: const _LibraryMessage(
                                 icon: Icons.queue_music_rounded,
                                 title: 'This playlist is empty',
-                                message: 'Long-press any song and choose Add to playlist.',
+                                message: 'Long-press songs to select them, then tap Add to playlist.',
                               ),
                             );
                           }
@@ -2949,7 +2898,7 @@ Future<void> showSongActions(
                   Navigator.pop(sheetContext);
                   _editTags(
                     context,
-                    song,
+                    [song],
                   ).then((message) => message == null ? null : notify(message));
                 },
               ),
@@ -2991,20 +2940,45 @@ Future<void> showSongActions(
   );
 }
 
-/// Lets the user fix [song]'s title, artist and album in the app; the
+/// Lets the user fix tags of [songs] in the app: the title of one song,
+/// and the artist, album and album artist of one or many. Returns the
 /// message to show, or null when nothing changed.
-Future<String?> _editTags(BuildContext context, Song song) async {
-  final fields = {
-    'title': TextEditingController(text: song.title),
-    'artist': TextEditingController(text: song.artist),
-    'album': TextEditingController(text: song.album),
+Future<String?> _editTags(BuildContext context, List<Song> songs) async {
+  // Otherwise the search box takes focus (and the keyboard) back on close.
+  FocusManager.instance.primaryFocus?.unfocus();
+  final labels = {
+    if (songs.length == 1) 'title': 'Title',
+    'artist': 'Artist',
+    'album': 'Album',
+    'albumArtist': 'Album artist',
   };
-  final edited = MusicLibrary.hasEditedTags(song);
-  // A map saves, false resets to the file's tags, null cancels.
+  String tag(Song song, String key) => switch (key) {
+    'title' => song.title,
+    'artist' => song.artist,
+    'album' => song.album,
+    _ => song.albumArtist,
+  };
+  // The value every song has, or null when they differ.
+  final shared = {
+    for (final key in labels.keys)
+      key: songs.every((song) => tag(song, key) == tag(songs.first, key))
+          ? tag(songs.first, key)
+          : null,
+  };
+  final fields = {
+    for (final key in labels.keys)
+      key: TextEditingController(text: shared[key] ?? ''),
+  };
+  final edited = songs.any(MusicLibrary.hasEditedTags);
+  // A map saves, false resets to the files' tags, null cancels.
   final Object? answer = await showDialog<Object>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('Edit tags'),
+      title: Text(
+        songs.length == 1
+            ? 'Edit tags'
+            : 'Edit tags of ${_trackCount(songs.length)}',
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -3014,12 +2988,15 @@ Future<String?> _editTags(BuildContext context, Song song) async {
                 controller: value,
                 textCapitalization: TextCapitalization.words,
                 decoration: InputDecoration(
-                  labelText: key[0].toUpperCase() + key.substring(1),
+                  labelText: labels[key],
+                  hintText: shared[key] == null
+                      ? 'Different on each; empty keeps them'
+                      : null,
                 ),
               ),
             const SizedBox(height: 12),
             Text(
-              'Saved in Nova only; the file and other apps keep its tags.',
+              'Saved in Nova only; the files and other apps keep their tags.',
               style: Theme.of(dialogContext).textTheme.bodySmall,
             ),
           ],
@@ -3045,18 +3022,19 @@ Future<String?> _editTags(BuildContext context, Song song) async {
       ],
     ),
   );
-  if (answer == null ||
-      answer is Map<String, String> &&
-          answer['title'] == song.title &&
-          answer['artist'] == song.artist &&
-          answer['album'] == song.album) {
-    return null;
+  if (answer == null) return null;
+  if (answer == false) {
+    await MusicLibrary().editTags(songs, null);
+    return 'Tags reset to the files\' own.';
   }
-  await MusicLibrary().saveTags(
-    song,
-    answer is Map<String, String> ? answer : null,
-  );
-  return answer == false ? 'Tags reset to the file\'s own.' : 'Tags saved.';
+  final changes = {
+    for (final MapEntry(:key, :value)
+        in (answer as Map<String, String>).entries)
+      if (value.isNotEmpty && value != shared[key]) key: value,
+  };
+  if (changes.isEmpty) return null;
+  await MusicLibrary().editTags(songs, changes);
+  return 'Tags saved.';
 }
 
 /// Songs of [song]'s album in [library], which share its cover.
@@ -3169,6 +3147,7 @@ Future<String> _removeCover(Song song, List<Song> library) async {
 /// Ticks/unticks playlists for [songs]; stays open so several can be
 /// changed. A playlist is ticked when it has all of them.
 Future<void> showAddToPlaylist(BuildContext context, List<Song> songs) {
+  FocusManager.instance.primaryFocus?.unfocus();
   final store = PlaylistStore.instance;
   return showModalBottomSheet<void>(
     context: context,
@@ -4378,6 +4357,159 @@ class _FontNameDialogState extends State<_FontNameDialog> {
           child: const Text('Download'),
         ),
       ],
+    );
+  }
+}
+
+/// Long-press selection of several songs, with a bar of actions for them.
+mixin _SongSelection<T extends StatefulWidget> on State<T> {
+  /// Ids of the ticked songs; selecting while not empty.
+  final Set<String> selectedIds = {};
+
+  /// The songs on screen in order; Select all and the actions follow it.
+  List<Song> get selectableSongs;
+
+  PlayerController get selectionPlayer;
+
+  /// Set on a playlist's page, to remove songs from it.
+  String? get selectionPlaylist => null;
+
+  bool get selecting => selectedIds.isNotEmpty;
+
+  void toggleSelected(Song song) {
+    if (!selecting) HapticFeedback.selectionClick();
+    setState(() {
+      if (!selectedIds.remove(song.id)) selectedIds.add(song.id);
+    });
+  }
+
+  List<Song> get _selection => [
+    for (final song in selectableSongs)
+      if (selectedIds.contains(song.id)) song,
+  ];
+
+  /// The ticked songs in list order; clears the selection.
+  List<Song> _takeSelection() {
+    final songs = _selection;
+    setState(selectedIds.clear);
+    return songs;
+  }
+
+  void _notify(String message, {SnackBarAction? action}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          action: action,
+          duration: const Duration(seconds: 8),
+        ),
+      );
+  }
+
+  /// Back leaves selection before it leaves the page.
+  Widget selectionScope(Widget child) => PopScope(
+    canPop: !selecting,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) setState(selectedIds.clear);
+    },
+    child: child,
+  );
+
+  Future<void> _queueSelection() async {
+    final songs = _takeSelection();
+    try {
+      for (final song in songs) {
+        await selectionPlayer.addToQueue(song);
+      }
+      _notify('Added ${_trackCount(songs.length)} to queue');
+    } catch (_) {
+      _notify('Could not update the queue.');
+    }
+  }
+
+  Future<void> _removeSelection(String playlist) async {
+    final songs = _takeSelection();
+    await PlaylistStore.instance.removeAll(playlist, songs);
+    _notify('Removed ${_trackCount(songs.length)} from $playlist');
+  }
+
+  Future<void> _trashSelection() async {
+    final songs = _selection;
+    final library = MusicLibrary();
+    try {
+      if (!await library.trashSongs(songs)) return;
+    } on PlatformException catch (error) {
+      return _notify(error.message ?? 'Could not delete the songs.');
+    } catch (_) {
+      return _notify('Could not delete the songs.');
+    }
+    if (mounted) setState(selectedIds.clear);
+    _notify(
+      'Moved ${_trackCount(songs.length)} to the trash',
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () => library
+            .trashSongs(songs, restore: true)
+            .catchError((Object _) => false),
+      ),
+    );
+  }
+
+  Widget selectionBar() {
+    final playlist = selectionPlaylist;
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            IconButton(
+              tooltip: 'Cancel selection',
+              onPressed: () => setState(selectedIds.clear),
+              icon: const Icon(Icons.close_rounded),
+            ),
+            Expanded(child: Text('${selectedIds.length} selected')),
+            IconButton(
+              tooltip: 'Select all',
+              onPressed: () => setState(
+                () => selectedIds.addAll(selectableSongs.map((s) => s.id)),
+              ),
+              icon: const Icon(Icons.select_all_rounded),
+            ),
+            IconButton(
+              tooltip: 'Add to queue',
+              onPressed: _queueSelection,
+              icon: const Icon(Icons.queue_music_rounded),
+            ),
+            IconButton(
+              tooltip: 'Add to playlist',
+              onPressed: () => showAddToPlaylist(context, _takeSelection()),
+              icon: const Icon(Icons.playlist_add_rounded),
+            ),
+            IconButton(
+              tooltip: 'Edit tags',
+              onPressed: () => _editTags(
+                context,
+                _takeSelection(),
+              ).then((message) => message == null ? null : _notify(message)),
+              icon: const Icon(Icons.edit_outlined),
+            ),
+            if (playlist != null)
+              IconButton(
+                tooltip: 'Remove from $playlist',
+                onPressed: () => _removeSelection(playlist),
+                icon: const Icon(Icons.playlist_remove_rounded),
+              ),
+            IconButton(
+              tooltip: 'Move to trash',
+              onPressed: _trashSelection,
+              icon: const Icon(Icons.delete_outline_rounded),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
