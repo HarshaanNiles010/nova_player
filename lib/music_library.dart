@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'settings_store.dart';
 import 'song.dart';
 
 class MusicLibrary {
@@ -32,11 +33,36 @@ class MusicLibrary {
     _covers = found ?? const {};
   }
 
+  /// Bumped when tags are edited, so the library reloads with them.
+  static final tagsChanged = ValueNotifier(0);
+
+  /// Title, artist and album fixed in the app, applied over the files' tags.
+  static var _tagEdits = <String, Map<String, String>>{};
+
+  static String _tagKeyOf(Song song) =>
+      tagEditKey({'path': song.path, 'uri': song.uri});
+
+  static bool hasEditedTags(Song song) =>
+      _tagEdits.containsKey(_tagKeyOf(song));
+
+  /// Saves [tags] (title, artist, album) for [song]; null goes back to the
+  /// file's own tags.
+  Future<void> saveTags(Song song, Map<String, String>? tags) async {
+    final key = _tagKeyOf(song);
+    tags == null ? _tagEdits.remove(key) : _tagEdits[key] = tags;
+    await SettingsStore().saveTagEdits(_tagEdits);
+    tagsChanged.value++;
+  }
+
   Future<List<Song>> loadSongs() async {
     await _loadCovers();
+    _tagEdits = await SettingsStore().loadTagEdits();
     final result = await _channel.invokeMethod<List<dynamic>>('getSongs') ?? [];
     return result
-        .map((item) => Song.fromMap(Map<String, dynamic>.from(item as Map)))
+        .map((item) {
+          final map = Map<String, dynamic>.from(item as Map);
+          return Song.fromMap({...map, ...?_tagEdits[tagEditKey(map)]});
+        })
         .toList(growable: false);
   }
 

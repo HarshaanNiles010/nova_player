@@ -122,4 +122,28 @@ void main() {
     expect(first.every((peak) => peak >= 0.18 && peak <= 1), isTrue);
     expect(waveformPeaks('track-42', 0), isEmpty);
   });
+
+  test('tag edits apply by path, and the album artist follows the artist', () {
+    final file = {
+      'id': '7',
+      'title': 'Track 01',
+      'artist': 'Unknown',
+      'album': 'Rips',
+      'uri': 'content://media/7',
+      'path': '/Music/Rips/01.flac',
+    };
+    expect(tagEditKey(file), '/Music/Rips/01.flac');
+    expect(
+      tagEditKey({'uri': 'content://media/8', 'path': ''}),
+      'content://media/8',
+    );
+    final song = Song.fromMap({
+      ...file,
+      'title': 'Halo',
+      'artist': 'Beyoncé',
+      'album': 'I Am... Sasha Fierce',
+    });
+    expect(song.title, 'Halo');
+    expect(song.albumArtist, 'Beyoncé');
+  });
 }

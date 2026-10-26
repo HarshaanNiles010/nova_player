@@ -100,6 +100,11 @@ class Song {
   }
 }
 
+/// Identifies a file for tag edits: its path, which survives re-indexing
+/// and, unlike the file name, is never shared by two songs.
+String tagEditKey(Map<String, dynamic> map) =>
+    '${map['path'] ?? ''}'.isNotEmpty ? '${map['path']}' : '${map['uri']}';
+
 /// First letter of [text] ignoring leading symbols; '#' for digits/symbols.
 String indexLetterOf(String text) {
   final match = RegExp(r'[\p{L}\p{N}]', unicode: true).firstMatch(text);

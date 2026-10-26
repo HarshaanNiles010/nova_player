@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,6 +24,26 @@ class SettingsStore {
   static const _eqEnabledKey = 'eq_enabled';
   static const _eqGainsKey = 'eq_gains';
   static const _lyricsOffsetKey = 'lyrics_offset_';
+  static const _tagEditsKey = 'tag_edits';
+
+  /// Tags fixed in the app, by [tagEditKey]; the files are never changed.
+  Future<Map<String, Map<String, String>>> loadTagEdits() async {
+    final json = (await SharedPreferences.getInstance()).getString(
+      _tagEditsKey,
+    );
+    if (json == null) return {};
+    return {
+      for (final MapEntry(:key, :value)
+          in (jsonDecode(json) as Map<String, dynamic>).entries)
+        key: Map<String, String>.from(value as Map),
+    };
+  }
+
+  Future<void> saveTagEdits(Map<String, Map<String, String>> edits) async =>
+      (await SharedPreferences.getInstance()).setString(
+        _tagEditsKey,
+        jsonEncode(edits),
+      );
 
   /// How much later than their timestamps [song]'s lyrics are shown.
   Future<Duration> loadLyricsOffset(Song song) async => Duration(
