@@ -32,7 +32,7 @@ class MainActivity : AudioServiceActivity() {
     private var pendingMusicFolderResult: MethodChannel.Result? = null
     // Backup and playlist files: the result and, when saving, the text to write.
     private var pendingFile: Pair<MethodChannel.Result, String?>? = null
-    private var pendingDeleteResult: MethodChannel.Result? = null
+    private var pendingTrashResult: MethodChannel.Result? = null
 
     // Library scans read many files; keep them off the UI thread and in order.
     private val libraryExecutor = Executors.newSingleThreadExecutor()
@@ -110,8 +110,9 @@ class MainActivity : AudioServiceActivity() {
                     result.success(null)
                 }
                 "rescanStorage" -> rescanStorage(result)
-                "deleteSongs" -> deleteSongs(
+                "trashSongs" -> trashSongs(
                     call.argument<List<String>>("uris") ?: emptyList(),
+                    call.argument<Boolean>("trash") ?: true,
                     result
                 )
                 "saveTextFile" -> pickFile(
@@ -261,23 +262,23 @@ class MainActivity : AudioServiceActivity() {
         Thread { lrcFolder.rebuild() }.start() // new .lrc files show after a rescan
     }
 
-    // Android shows its own "Allow Nova Player to delete" dialog; the result
-    // is true once the files are gone.
-    private fun deleteSongs(uris: List<String>, result: MethodChannel.Result) {
-        // shortcut: Android 10 and older need write access per file; add it if those phones matter.
+    // Android shows its own "Allow Nova Player to move to trash" (or restore)
+    // dialog; the result is true once it is done.
+    private fun trashSongs(uris: List<String>, trash: Boolean, result: MethodChannel.Result) {
+        // shortcut: Android 10 and older have no trash; add deleting with write access if those phones matter.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             result.error("UNSUPPORTED", "Deleting songs needs Android 11 or newer.", null)
             return
         }
         try {
-            val request = MediaStore.createDeleteRequest(contentResolver, uris.map(Uri::parse))
-            pendingDeleteResult = result
+            val request = MediaStore.createTrashRequest(contentResolver, uris.map(Uri::parse), trash)
+            pendingTrashResult = result
             @Suppress("DEPRECATION")
-            startIntentSenderForResult(request.intentSender, DELETE_REQUEST, null, 0, 0, 0)
+            startIntentSenderForResult(request.intentSender, TRASH_REQUEST, null, 0, 0, 0)
         } catch (error: Exception) {
             // Songs found through an added folder are not in MediaStore.
-            pendingDeleteResult = null
-            result.error("DELETE_FAILED", "Only songs in the phone's music library can be deleted.", null)
+            pendingTrashResult = null
+            result.error("TRASH_FAILED", "Only songs in the phone's music library can be deleted.", null)
         }
     }
 
@@ -285,9 +286,9 @@ class MainActivity : AudioServiceActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == DELETE_REQUEST) {
-            pendingDeleteResult?.success(resultCode == RESULT_OK)
-            pendingDeleteResult = null
+        if (requestCode == TRASH_REQUEST) {
+            pendingTrashResult?.success(resultCode == RESULT_OK)
+            pendingTrashResult = null
             return
         }
         if (requestCode == FILE_REQUEST) {
@@ -520,6 +521,6 @@ class MainActivity : AudioServiceActivity() {
         private const val LYRICS_FOLDER_REQUEST = 1002
         private const val MUSIC_FOLDER_REQUEST = 1003
         private const val FILE_REQUEST = 1004
-        private const val DELETE_REQUEST = 1005
+        private const val TRASH_REQUEST = 1005
     }
 }
