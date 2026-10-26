@@ -168,6 +168,7 @@ class PlayerController extends ChangeNotifier {
     if (_hasSelection) {
       // Replacing the sources would stop playback; the next playAt loads [songs].
       _baseSequence = false;
+      await _refreshTags(value);
       notifyListeners();
       return;
     }
@@ -408,6 +409,50 @@ class PlayerController extends ChangeNotifier {
     _activeSequence.addAll(more);
     await player.addAudioSources(more.map(_source).toList(growable: false));
     notifyListeners();
+  }
+
+  /// Swaps in [value]'s copies of loaded songs whose tags were edited, so
+  /// Now Playing, the notification and songs still to come show them.
+  Future<void> _refreshTags(List<Song> value) async {
+    final byId = {for (final song in value) song.id: song};
+    Song fresh(Song song) => byId[song.id] ?? song;
+    bool edited(Song song) => switch (byId[song.id]) {
+      final newer? =>
+        newer.title != song.title ||
+            newer.artist != song.artist ||
+            newer.album != song.album,
+      null => false,
+    };
+    _order = [for (final song in _order) fresh(song)];
+    _queue.setAll(0, _queue.map(fresh).toList());
+    _restoredQueue = [for (final song in _restoredQueue) fresh(song)];
+    final changed = [
+      for (final (i, song) in _activeSequence.indexed)
+        if (edited(song)) i,
+    ];
+    if (changed.isEmpty) return;
+    final current = player.currentIndex;
+    _rearranging = currentSong == null ? null : fresh(currentSong!);
+    try {
+      for (final i in changed) {
+        final song = _activeSequence[i] = fresh(_activeSequence[i]);
+        if (i == current) {
+          // Play the new copy from the same spot, then drop the old one.
+          await player.insertAudioSource(i + 1, _source(song));
+          await player.seek(player.position, index: i + 1);
+          // just_audio_background sends the notification its new song only
+          // once the index has held for 100 ms; back at i sooner, it sees no
+          // change.
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+          await player.removeAudioSourceAt(i);
+        } else {
+          await player.removeAudioSourceAt(i);
+          await player.insertAudioSource(i, _source(song));
+        }
+      }
+    } finally {
+      _rearranging = null;
+    }
   }
 
   AudioSource _source(Song song) {
