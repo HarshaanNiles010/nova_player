@@ -107,7 +107,18 @@ class _MusicHomePageState extends State<MusicHomePage> {
   @override
   void initState() {
     super.initState();
+    MusicLibrary.tagsChanged.addListener(_reloadSongs);
     _initialize();
+  }
+
+  /// Reads the library again without the loading spinner, keeping the scroll.
+  Future<void> _reloadSongs() async {
+    try {
+      _allSongs = await _library.loadSongs();
+      await _showSongs();
+    } catch (_) {
+      _showMessage('The music library could not be read.');
+    }
   }
 
   Future<void> _initialize() async {
@@ -407,6 +418,7 @@ class _MusicHomePageState extends State<MusicHomePage> {
 
   @override
   void dispose() {
+    MusicLibrary.tagsChanged.removeListener(_reloadSongs);
     _positionSaver?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
@@ -2931,6 +2943,17 @@ Future<void> showSongActions(
                   ),
                 ),
               ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Edit tags'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _editTags(
+                    context,
+                    song,
+                  ).then((message) => message == null ? null : notify(message));
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.image_search_rounded),
                 title: const Text('Download cover art'),
                 onTap: () {
@@ -2966,6 +2989,74 @@ Future<void> showSongActions(
       );
     },
   );
+}
+
+/// Lets the user fix [song]'s title, artist and album in the app; the
+/// message to show, or null when nothing changed.
+Future<String?> _editTags(BuildContext context, Song song) async {
+  final fields = {
+    'title': TextEditingController(text: song.title),
+    'artist': TextEditingController(text: song.artist),
+    'album': TextEditingController(text: song.album),
+  };
+  final edited = MusicLibrary.hasEditedTags(song);
+  // A map saves, false resets to the file's tags, null cancels.
+  final Object? answer = await showDialog<Object>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Edit tags'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final MapEntry(:key, :value) in fields.entries)
+              TextField(
+                controller: value,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(
+                  labelText: key[0].toUpperCase() + key.substring(1),
+                ),
+              ),
+            const SizedBox(height: 12),
+            Text(
+              'Saved in Nova only; the file and other apps keep its tags.',
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        if (edited)
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Reset'),
+          ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext, {
+            for (final MapEntry(:key, :value) in fields.entries)
+              key: value.text.trim(),
+          }),
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
+  if (answer == null ||
+      answer is Map<String, String> &&
+          answer['title'] == song.title &&
+          answer['artist'] == song.artist &&
+          answer['album'] == song.album) {
+    return null;
+  }
+  await MusicLibrary().saveTags(
+    song,
+    answer is Map<String, String> ? answer : null,
+  );
+  return answer == false ? 'Tags reset to the file\'s own.' : 'Tags saved.';
 }
 
 /// Songs of [song]'s album in [library], which share its cover.
