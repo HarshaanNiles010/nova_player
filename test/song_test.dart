@@ -78,20 +78,22 @@ void main() {
   });
 
   test('artist then album puts album headings inside each artist', () {
-    Song song(String id, String artist, String album) => Song.fromMap({
-      'id': int.parse(id),
-      'title': 'Song $id',
-      'artist': artist,
-      'album': album,
-      'uri': 'content://media/$id',
-    });
+    Song song(String id, String artist, String album, [int track = 0]) =>
+        Song.fromMap({
+          'id': int.parse(id),
+          'title': 'Song $id',
+          'artist': artist,
+          'album': album,
+          'track': track,
+          'uri': 'content://media/$id',
+        });
 
     final rows = groupRows([
-      song('1', 'Beta', 'Two'),
+      song('1', 'Beta', 'Two', 2),
       song('2', 'Alpha', 'Zed'),
       song('3', 'Beta', 'One'),
       song('4', 'Alpha', 'Ark'),
-      song('5', 'Beta', 'Two'),
+      song('5', 'Beta', 'Two', 1),
     ], GroupBy.artistAlbum);
 
     expect(
@@ -113,8 +115,8 @@ void main() {
         'One (1)',
         '3',
         'Two (2)',
-        '1',
         '5',
+        '1',
       ],
     );
   });

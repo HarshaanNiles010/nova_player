@@ -11,6 +11,7 @@ class Song {
     required this.mimeType,
     this.genre = 'Unknown genre',
     this.year = 'Unknown year',
+    this.track = 0,
     this.dateAdded = 0,
     this.size = 0,
     this.folder = '',
@@ -39,6 +40,7 @@ class Song {
         final int year when year > 0 => '$year',
         _ => 'Unknown year',
       },
+      track: (map['track'] as num?)?.toInt() ?? 0,
       dateAdded: (map['dateAdded'] as num?)?.toInt() ?? 0,
       size: (map['size'] as num?)?.toInt() ?? 0,
       folder: map['folder']?.toString() ?? '',
@@ -60,6 +62,9 @@ class Song {
   final String mimeType;
   final String genre;
   final String year;
+
+  /// Disc * 1000 + track number, as Android stores it (0 if unknown).
+  final int track;
 
   /// When the file was added to the phone, in epoch milliseconds (0 if unknown).
   final int dateAdded;

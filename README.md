@@ -11,6 +11,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Search by title, artist or album, group by artist, artist then album, album, genre, year or format, and fast-scroll long lists.
 - Browse by folder.
 - Album art, with album and artist pages. Tap the artist or album name on Now Playing to open them.
+- Albums play in disc and track order, so post-rock and live albums run on without gaps; songs without a track number follow by title.
 - Albums are grouped by their album artist tag, so two artists' "Greatest Hits" stay separate and a compilation stays one album. A song without the tag counts under its own artist. The tag is read on Android 11 and later.
 - Fix a wrong title, artist, album or album artist with **Edit tags** in a song's menu, or for several selected songs at once (for example, one album artist for a whole album whose tracks disagree). Fields the songs share are filled in; leaving a mixed field empty keeps each song's own. The fix is saved in Nova (and in backups), not written into the files, so other apps keep the old tags and nothing can damage your music. Now Playing and the notification update right away. **Reset** in the same dialog goes back to the files' tags.
 

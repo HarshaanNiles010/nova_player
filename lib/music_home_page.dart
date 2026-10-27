@@ -2050,7 +2050,7 @@ class AlbumsPage extends StatelessWidget {
       groups: groupSongs(
         songs,
         (song) => '${song.album}\u0000${song.albumArtist}',
-      ),
+      ).map((album, tracks) => MapEntry(album, inTrackOrder(tracks))),
       player: player,
       name: (tracks) => tracks.first.album,
       detail: (tracks) => tracks.first.albumArtist,

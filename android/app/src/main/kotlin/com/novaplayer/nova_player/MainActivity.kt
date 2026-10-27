@@ -425,6 +425,7 @@ class MainActivity : AudioServiceActivity() {
             MediaStore.Audio.Media.DISPLAY_NAME,
             MediaStore.Audio.Media.MIME_TYPE,
             MediaStore.Audio.Media.YEAR,
+            MediaStore.Audio.Media.TRACK,
             MediaStore.Audio.Media.SIZE,
             MediaStore.Audio.Media.DATE_ADDED
         )
@@ -462,6 +463,7 @@ class MainActivity : AudioServiceActivity() {
                 val fileNameIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
                 val mimeTypeIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
                 val yearIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
+        val trackIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
                 val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
                 val addedIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
                 val genreIndex =
@@ -486,6 +488,7 @@ class MainActivity : AudioServiceActivity() {
                         "fileName" to cursor.getString(fileNameIndex),
                         "mimeType" to cursor.getString(mimeTypeIndex),
                         "year" to cursor.getInt(yearIndex),
+                        "track" to cursor.getInt(trackIndex),
                         "genre" to if (genreIndex >= 0) cursor.getString(genreIndex) else null,
                         "dateAdded" to cursor.getLong(addedIndex) * 1000, // seconds to ms
                         "size" to cursor.getLong(sizeIndex),

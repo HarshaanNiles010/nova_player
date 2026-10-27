@@ -54,10 +54,21 @@ List<Object> groupRows(List<Song> songs, GroupBy groupBy) {
           (s) => s.album,
         ).entries) ...[
           (artist: artist.key, album: album.key, count: album.value.length),
-          ...album.value,
+          ...inTrackOrder(album.value),
         ]
       else
         ...artist.value,
     ],
   ];
+}
+
+/// An album's songs by disc and track number, so they play through in order
+/// (and gaplessly); songs without a number follow, by title.
+List<Song> inTrackOrder(List<Song> songs) {
+  int number(Song song) => song.track == 0 ? 1 << 30 : song.track;
+  return [...songs]..sort(
+    (a, b) => number(a) != number(b)
+        ? number(a) - number(b)
+        : a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+  );
 }
