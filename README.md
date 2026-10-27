@@ -8,7 +8,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 
 **Library**
 - Finds every song Android has indexed, plus extra folders you add (for example folders with a `.nomedia` file).
-- Search by title, artist or album, group by artist, album, genre, year or format, and fast-scroll long lists.
+- Search by title, artist or album, group by artist, artist then album, album, genre, year or format, and fast-scroll long lists.
 - Browse by folder.
 - Album art, with album and artist pages. Tap the artist or album name on Now Playing to open them.
 - Albums are grouped by their album artist tag, so two artists' "Greatest Hits" stay separate and a compilation stays one album. A song without the tag counts under its own artist. The tag is read on Android 11 and later.

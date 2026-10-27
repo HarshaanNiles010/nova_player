@@ -75,20 +75,10 @@ class _MusicHomePageState extends State<MusicHomePage>
   void _updatePlayOrder() {
     _playOrder = _groupBy == GroupBy.none
         ? _songs
-        : [for (final group in _groupsOf(_songs).values) ...group];
+        : groupRows(_songs, _groupBy).whereType<Song>().toList();
   }
 
-  /// Songs, with a group-name String before each group when grouped.
-  List<Object> get _rows {
-    final songs = _visibleSongs;
-    if (_groupBy == GroupBy.none) return songs;
-    return [
-      for (final entry in _groupsOf(songs).entries) ...[
-        entry.key,
-        ...entry.value,
-      ],
-    ];
-  }
+  List<Object> get _rows => groupRows(_visibleSongs, _groupBy);
 
   Future<void> _selectGroupBy(GroupBy group) async {
     setState(() {
@@ -385,6 +375,7 @@ class _MusicHomePageState extends State<MusicHomePage>
                       final row = rows[(fraction * (rows.length - 1)).round()];
                       return switch (row) {
                         final String group => group,
+                        final AlbumHeading album => album.artist,
                         final Song song when _groupBy != GroupBy.none =>
                           _groupBy.keyFor(song),
                         final Song song => song.indexLetter,
@@ -573,6 +564,16 @@ class _MusicHomePageState extends State<MusicHomePage>
               return Align(
                 alignment: Alignment.bottomLeft,
                 child: _GroupHeader(title: row, count: groupSizes[row] ?? 0),
+              );
+            }
+            if (row is AlbumHeading) {
+              return Align(
+                alignment: Alignment.bottomLeft,
+                child: _GroupHeader(
+                  title: row.album,
+                  count: row.count,
+                  album: true,
+                ),
               );
             }
             final song = row as Song;
@@ -767,16 +768,23 @@ class _BackToTopButton extends StatelessWidget {
 }
 
 class _GroupHeader extends StatelessWidget {
-  const _GroupHeader({required this.title, required this.count});
+  const _GroupHeader({
+    required this.title,
+    required this.count,
+    this.album = false,
+  });
 
   final String title;
   final int count;
+
+  /// Album heading inside an artist group: indented and quieter.
+  final bool album;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 24, 40, 8),
+      padding: EdgeInsets.fromLTRB(album ? 20 : 8, album ? 16 : 24, 40, 8),
       child: Row(
         children: [
           Expanded(
@@ -784,10 +792,15 @@ class _GroupHeader extends StatelessWidget {
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.w800,
-              ),
+              style: album
+                  ? theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    )
+                  : theme.textTheme.titleMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
             ),
           ),
           Text(

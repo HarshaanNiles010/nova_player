@@ -77,6 +77,48 @@ void main() {
     expect(GroupBy.format.keyFor(songs.first), 'MP3');
   });
 
+  test('artist then album puts album headings inside each artist', () {
+    Song song(String id, String artist, String album) => Song.fromMap({
+      'id': int.parse(id),
+      'title': 'Song $id',
+      'artist': artist,
+      'album': album,
+      'uri': 'content://media/$id',
+    });
+
+    final rows = groupRows([
+      song('1', 'Beta', 'Two'),
+      song('2', 'Alpha', 'Zed'),
+      song('3', 'Beta', 'One'),
+      song('4', 'Alpha', 'Ark'),
+      song('5', 'Beta', 'Two'),
+    ], GroupBy.artistAlbum);
+
+    expect(
+      rows.map(
+        (row) => switch (row) {
+          final String artist => artist,
+          final AlbumHeading a => '${a.album} (${a.count})',
+          final Song s => s.id,
+          _ => row,
+        },
+      ),
+      [
+        'Alpha',
+        'Ark (1)',
+        '4',
+        'Zed (1)',
+        '2',
+        'Beta',
+        'One (1)',
+        '3',
+        'Two (2)',
+        '1',
+        '5',
+      ],
+    );
+  });
+
   test('index letter skips leading symbols and groups digits', () {
     Song titled(String title) =>
         Song.fromMap({'id': 1, 'title': title, 'uri': 'content://media/1'});
