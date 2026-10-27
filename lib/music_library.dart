@@ -62,12 +62,11 @@ class MusicLibrary {
     await _loadCovers();
     _tagEdits = await SettingsStore().loadTagEdits();
     final result = await _channel.invokeMethod<List<dynamic>>('getSongs') ?? [];
-    return result
-        .map((item) {
-          final map = Map<String, dynamic>.from(item as Map);
-          return Song.fromMap({...map, ...?_tagEdits[tagEditKey(map)]});
-        })
-        .toList(growable: false);
+    final maps = result.map((item) {
+      final map = Map<String, dynamic>.from(item as Map);
+      return {...map, ...?_tagEdits[tagEditKey(map)]};
+    }).toList();
+    return borrowArtistGenres(maps).map(Song.fromMap).toList(growable: false);
   }
 
   /// Extra folders scanned directly, as (uri, readable name).
@@ -260,4 +259,34 @@ class MusicLibrary {
         })
         .catchError((Object _) => null);
   }
+}
+
+/// Songs without a genre tag take the most common genre among their artist's
+/// other songs, so fewer land in "Unknown genre". The files are not changed.
+List<Map<String, dynamic>> borrowArtistGenres(List<Map<String, dynamic>> maps) {
+  String? genreOf(Map<String, dynamic> map) => switch (map['genre']
+      ?.toString()
+      .trim()) {
+    final String genre when genre.isNotEmpty && genre != '<unknown>' => genre,
+    _ => null,
+  };
+  final counts = <Object?, Map<String, int>>{};
+  for (final map in maps) {
+    if (genreOf(map) case final genre?) {
+      final artist = counts.putIfAbsent(map['artist'], () => {});
+      artist[genre] = (artist[genre] ?? 0) + 1;
+    }
+  }
+  return [
+    for (final map in maps)
+      if (genreOf(map) == null && counts[map['artist']] != null)
+        {
+          ...map,
+          'genre': counts[map['artist']]!.entries
+              .reduce((a, b) => b.value > a.value ? b : a)
+              .key,
+        }
+      else
+        map,
+  ];
 }

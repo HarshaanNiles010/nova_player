@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_player/group_by.dart';
+import 'package:nova_player/music_library.dart';
 import 'package:nova_player/queue_mode.dart';
 import 'package:nova_player/song.dart';
 import 'package:nova_player/theme.dart';
@@ -189,5 +190,24 @@ void main() {
     });
     expect(song.title, 'Halo');
     expect(song.albumArtist, 'Beyoncé');
+  });
+
+  test('songs without a genre borrow their artist\'s most common one', () {
+    final maps = borrowArtistGenres([
+      {'artist': 'A', 'genre': 'Rock'},
+      {'artist': 'A', 'genre': 'Post-Rock'},
+      {'artist': 'A', 'genre': 'Post-Rock'},
+      {'artist': 'A', 'genre': null},
+      {'artist': 'A', 'genre': '<unknown>'},
+      {'artist': 'B', 'genre': ''},
+    ]);
+    expect(maps.map((map) => map['genre']), [
+      'Rock',
+      'Post-Rock',
+      'Post-Rock',
+      'Post-Rock',
+      'Post-Rock',
+      '',
+    ]);
   });
 }

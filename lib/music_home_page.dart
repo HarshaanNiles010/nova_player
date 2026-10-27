@@ -2964,11 +2964,13 @@ Future<String?> _editTags(BuildContext context, List<Song> songs) async {
     'artist': 'Artist',
     'album': 'Album',
     'albumArtist': 'Album artist',
+    'genre': 'Genre',
   };
   String tag(Song song, String key) => switch (key) {
     'title' => song.title,
     'artist' => song.artist,
     'album' => song.album,
+    'genre' => song.genre == 'Unknown genre' ? '' : song.genre,
     _ => song.albumArtist,
   };
   // The value every song has, or null when they differ.
