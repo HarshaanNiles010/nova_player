@@ -27,7 +27,8 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Sleep timer: pause after 15 to 60 minutes or at the end of the song, fading out over the last 10 seconds.
 - Equalizer in Settings: one slider per band your phone offers, with Flat, Bass, Treble and Vocal presets. It is remembered across restarts.
 - Gapless playback between songs in the same format (sample rate and channels); a format change can leave a short gap.
-- A waveform seek bar on Now Playing.
+- A waveform seek bar on Now Playing, with the file's format, bit depth, sample rate and bitrate above it.
+- Volume levelling in Settings keeps songs or albums at a similar volume, using the ReplayGain tags in your files (FLAC, MP3, M4A, Ogg and Opus's R128 tags). Songs without tags play unchanged, and nothing is scanned or changed.
 - Lyrics from the file's tags or a matching `.lrc` file. Synced lyrics follow the song. If they run ahead or behind, the **−** and **+** buttons in the lyrics header shift them 0.5 s earlier or later; the shift is saved for that song.
 - For a song without lyrics, tap **Download lyrics** on Now Playing to fetch them from [LRCLIB](https://lrclib.net), synced when available. Only that song's title, artist, album and length are sent, and only when you tap.
 - **Translate** in the lyrics header shows English in italics under each line, in sync with the song; tap **Original only** to hide it. Translation runs on the phone (Google ML Kit), so lyrics never leave it; the first use of a language downloads its model (about 30 MB). Lyrics written in Latin letters, like romaji, cannot be translated. Settings → Translation languages lists the downloaded language packs; delete any of them to free space, and translating a song in that language downloads it again.
