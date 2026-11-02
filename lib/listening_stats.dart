@@ -54,14 +54,27 @@ List<String> splitGenres(String genre) => [
       name,
 ];
 
+/// The years with any listening in [records], newest first.
+List<int> recapYears(List<PlayRecord> records) => {
+  for (final record in records)
+    if (record.listenedMs > 0) record.start.year,
+}.toList()..sort((a, b) => b.compareTo(a));
+
 ListeningStats computeStats(
   List<PlayRecord> records, {
   DateTime? since,
+  DateTime? until,
   int top = 5,
 }) {
-  final inRange = since == null
+  final inRange = since == null && until == null
       ? records
-      : records.where((r) => !r.start.isBefore(since)).toList();
+      : records
+            .where(
+              (r) =>
+                  (since == null || !r.start.isBefore(since)) &&
+                  (until == null || r.start.isBefore(until)),
+            )
+            .toList();
 
   final songs = <String, _Tally>{};
   final artists = <String, _Tally>{};
