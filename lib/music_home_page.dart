@@ -49,6 +49,7 @@ class _MusicHomePageState extends State<MusicHomePage>
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
+  final _listKey = GlobalKey();
   List<Song> _songs = const [];
 
   /// Every song found, including ones hidden from [_songs].
@@ -309,12 +310,39 @@ class _MusicHomePageState extends State<MusicHomePage>
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _openNowPlaying() {
-    if (_player.currentSong == null) return;
-    Navigator.of(context).push(
+  Future<void> _openNowPlaying() async {
+    final opened = _player.currentSong?.id;
+    if (opened == null) return;
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => NowPlayingPage(controller: _player),
       ),
+    );
+    if (!mounted) return;
+    setState(() {});
+    if (_player.currentSong?.id != opened) _revealCurrentSong();
+  }
+
+  /// Brings the playing song on screen, unless it already is.
+  void _revealCurrentSong() {
+    final list = _listKey.currentContext?.findRenderObject();
+    final id = _player.currentSong?.id;
+    final index = _rows.indexWhere((row) => row is Song && row.id == id);
+    if (list is! RenderSliverFixedExtentBoxAdaptor ||
+        index < 0 ||
+        !_scrollController.hasClients) {
+      return;
+    }
+    final rowHeight = list.itemExtent!;
+    final top = list.constraints.precedingScrollExtent + index * rowHeight;
+    final position = _scrollController.position;
+    final viewport = position.viewportDimension;
+    if (top >= position.pixels &&
+        top + rowHeight <= position.pixels + viewport) {
+      return;
+    }
+    _scrollController.jumpTo(
+      (top - (viewport - rowHeight) / 2).clamp(0.0, position.maxScrollExtent),
     );
   }
 
@@ -558,6 +586,7 @@ class _MusicHomePageState extends State<MusicHomePage>
         // Fixed row height lets fast-scroll jumps skip straight to an offset;
         // a plain SliverList lays out every row in between, which hung the app.
         sliver: SliverPrototypeExtentList.builder(
+          key: _listKey,
           prototypeItem: SongTile(
             song: _visibleSongs.first,
             active: false,
