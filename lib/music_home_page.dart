@@ -405,6 +405,12 @@ class _MusicHomePageState extends State<MusicHomePage>
                                 controller: _searchController,
                                 onChanged: (value) =>
                                     setState(() => _query = value),
+                                // Focus left here returns after any page or
+                                // sheet closes, scrolling the list to the top.
+                                onTapOutside: (_) => FocusManager
+                                    .instance
+                                    .primaryFocus
+                                    ?.unfocus(),
                                 decoration: const InputDecoration(
                                   hintText: 'Search songs, artists, albums',
                                   prefixIcon: Icon(Icons.search_rounded),
@@ -487,7 +493,8 @@ class _MusicHomePageState extends State<MusicHomePage>
   }
 
   List<Widget> _buildLibrarySlivers() {
-    if (_loading) {
+    // A reload keeps the list up: swapping it for a spinner loses the scroll.
+    if (_loading && _songs.isEmpty) {
       return const [
         SliverFillRemaining(
           hasScrollBody: false,
