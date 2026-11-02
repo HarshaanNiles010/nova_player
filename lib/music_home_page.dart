@@ -28,6 +28,7 @@ import 'search_bar_style.dart';
 import 'settings_store.dart';
 import 'smart_playlists.dart';
 import 'song.dart';
+import 'song_sort.dart';
 import 'stats_page.dart';
 import 'theme.dart';
 import 'translation_models_page.dart';
@@ -61,6 +62,13 @@ class _MusicHomePageState extends State<MusicHomePage>
   String _query = '';
   GroupBy _groupBy = GroupBy.none;
   SearchBarStyle _searchBarStyle = SearchBarStyle.banner;
+  SongSort _sort = SongSort.title;
+
+  /// [_songs] in the chosen order; the library itself stays in title order.
+  List<Song> _sortedSongs = const [];
+
+  /// Plays per [Song.key], for sorting by most played.
+  Map<String, int> _plays = const {};
 
   /// List position to return to when the search is cleared.
   double _beforeSearch = 0;
@@ -89,9 +97,10 @@ class _MusicHomePageState extends State<MusicHomePage>
   PlayerController get selectionPlayer => _player;
 
   void _updatePlayOrder() {
+    _sortedSongs = sortSongs(_songs, _sort, plays: _plays);
     _playOrder = _groupBy == GroupBy.none
-        ? _songs
-        : groupRows(_songs, _groupBy).whereType<Song>().toList();
+        ? _sortedSongs
+        : groupRows(_sortedSongs, _groupBy).whereType<Song>().toList();
   }
 
   List<Object> get _rows => groupRows(_visibleSongs, _groupBy);
@@ -103,6 +112,27 @@ class _MusicHomePageState extends State<MusicHomePage>
     });
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
     await _settings.saveGroupBy(group);
+  }
+
+  Future<void> _selectSort(SongSort sort) async {
+    if (sort == SongSort.mostPlayed) _plays = await _loadPlays();
+    if (!mounted) return;
+    setState(() {
+      _sort = sort;
+      _updatePlayOrder();
+    });
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    await _settings.saveSongSort(sort);
+  }
+
+  Future<Map<String, int>> _loadPlays() async {
+    final plays = <String, int>{};
+    for (final record in await ListeningHistory.instance.load()) {
+      if (record.countsAsPlay) {
+        plays[record.songKey] = (plays[record.songKey] ?? 0) + 1;
+      }
+    }
+    return plays;
   }
 
   /// Results start from the top; clearing the search returns to the old place.
@@ -128,8 +158,8 @@ class _MusicHomePageState extends State<MusicHomePage>
 
   List<Song> get _visibleSongs {
     final query = _query.trim().toLowerCase();
-    if (query.isEmpty) return _songs;
-    return _songs
+    if (query.isEmpty) return _sortedSongs;
+    return _sortedSongs
         .where(
           (song) => '${song.title} ${song.artist} ${song.album}'
               .toLowerCase()
@@ -161,6 +191,8 @@ class _MusicHomePageState extends State<MusicHomePage>
     await _player.setQueueMode(await _settings.loadQueueMode());
     _groupBy = await _settings.loadGroupBy();
     _searchBarStyle = await _settings.loadSearchBarStyle();
+    _sort = await _settings.loadSongSort();
+    if (_sort == SongSort.mostPlayed) _plays = await _loadPlays();
     _hidden = await _settings.loadHidden();
     unawaited(restoreEqualizer(_player.equalizer));
     await _loadLibrary();
@@ -360,9 +392,7 @@ class _MusicHomePageState extends State<MusicHomePage>
         builder: (_) => NowPlayingPage(controller: _player),
       ),
     );
-    if (!mounted) return;
-    setState(() {});
-    if (_player.currentSong?.id != opened) _revealCurrentSong();
+    if (mounted && _player.currentSong?.id != opened) _revealCurrentSong();
   }
 
   /// Brings the playing song on screen, unless it already is.
@@ -410,7 +440,18 @@ class _MusicHomePageState extends State<MusicHomePage>
     // Focus left here returns after any page or sheet closes, scrolling the
     // list to the top.
     onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-    decoration: decoration,
+    decoration: decoration.copyWith(
+      suffixIcon: _query.isEmpty
+          ? null
+          : IconButton(
+              tooltip: 'Clear search',
+              onPressed: () {
+                _searchController.clear();
+                _search('');
+              },
+              icon: const Icon(Icons.close_rounded),
+            ),
+    ),
   );
 
   Widget _groupByMenu(Widget child) => PopupMenuButton<GroupBy>(
@@ -426,6 +467,35 @@ class _MusicHomePageState extends State<MusicHomePage>
         ),
     ],
     child: child,
+  );
+
+  Widget _sortMenu(Widget child) => PopupMenuButton<SongSort>(
+    tooltip: 'Sort by',
+    initialValue: _sort,
+    onSelected: _selectSort,
+    itemBuilder: (context) => [
+      for (final sort in SongSort.values)
+        CheckedPopupMenuItem(
+          value: sort,
+          checked: sort == _sort,
+          child: Text(sort.label),
+        ),
+    ],
+    child: child,
+  );
+
+  /// A menu's label in the header; shrinks so two fit on a narrow phone.
+  Widget _menuLabel(IconData icon, String label) => Padding(
+    padding: const EdgeInsets.all(8),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 8),
+        Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+        const Icon(Icons.arrow_drop_down_rounded),
+      ],
+    ),
   );
 
   /// Nova, search and Group by, for the banner and the scrolling style.
@@ -450,22 +520,19 @@ class _MusicHomePageState extends State<MusicHomePage>
     ),
     Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: _groupByMenu(
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.segment_rounded, size: 18),
-                const SizedBox(width: 8),
-                Text('Group by: ${_groupBy.label}'),
-                const Icon(Icons.arrow_drop_down_rounded),
-              ],
+      child: Row(
+        children: [
+          Flexible(
+            child: _groupByMenu(
+              _menuLabel(Icons.segment_rounded, 'Group by: ${_groupBy.label}'),
             ),
           ),
-        ),
+          Flexible(
+            child: _sortMenu(
+              _menuLabel(Icons.sort_rounded, 'Sort: ${_sort.label}'),
+            ),
+          ),
+        ],
       ),
     ),
   ];
@@ -486,7 +553,7 @@ class _MusicHomePageState extends State<MusicHomePage>
           Expanded(
             child: _searchField(
               const InputDecoration(
-                hintText: 'Search songs, artists, albums',
+                hintText: 'Search',
                 filled: false,
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
@@ -500,6 +567,12 @@ class _MusicHomePageState extends State<MusicHomePage>
             const Padding(
               padding: EdgeInsets.all(12),
               child: Icon(Icons.segment_rounded),
+            ),
+          ),
+          _sortMenu(
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Icon(Icons.sort_rounded),
             ),
           ),
         ],
@@ -557,7 +630,7 @@ class _MusicHomePageState extends State<MusicHomePage>
                         final AlbumHeading album => album.artist,
                         final Song song when _groupBy != GroupBy.none =>
                           _groupBy.keyFor(song),
-                        final Song song => song.indexLetter,
+                        final Song song => _sort.scrollLabel(song, _plays),
                         _ => null,
                       };
                     },
@@ -710,15 +783,19 @@ class _MusicHomePageState extends State<MusicHomePage>
               );
             }
             final song = row as Song;
-            return SongTile(
-              song: song,
-              active: _player.currentSong?.id == song.id,
-              selected: selecting ? selectedIds.contains(song.id) : null,
-              onTap: () => selecting ? toggleSelected(song) : _play(song),
-              onQueue: () => _addToQueue(song),
-              onLongPress: () => toggleSelected(song),
-              onActions: () =>
-                  showSongActions(context, song: song, player: _player),
+            // Follows the playing song, which changes without this page.
+            return ListenableBuilder(
+              listenable: _player,
+              builder: (context, _) => SongTile(
+                song: song,
+                active: _player.currentSong?.id == song.id,
+                selected: selecting ? selectedIds.contains(song.id) : null,
+                onTap: () => selecting ? toggleSelected(song) : _play(song),
+                onQueue: () => _addToQueue(song),
+                onLongPress: () => toggleSelected(song),
+                onActions: () =>
+                    showSongActions(context, song: song, player: _player),
+              ),
             );
           },
         ),

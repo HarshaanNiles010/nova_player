@@ -8,7 +8,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 
 **Library**
 - Finds every song Android has indexed, plus extra folders you add (for example folders with a `.nomedia` file).
-- Search by title, artist or album, group by artist, artist then album, album, genre, year or format, and fast-scroll long lists. Settings → Search bar keeps search within reach while you scroll: a banner fixed at the top, a compact floating bar, or scrolling away with the list. The list keeps your place when you come back from another page; if the song changed on Now Playing, it moves to the new one.
+- Search by title, artist or album, group by artist, artist then album, album, genre, year or format, sort by title, artist, album, recently added, longest or most played, and fast-scroll long lists. Settings → Search bar keeps search within reach while you scroll: a banner fixed at the top, a compact floating bar, or scrolling away with the list. The list keeps your place when you come back from another page; if the song changed on Now Playing, it moves to the new one.
 - Browse by folder.
 - Album art, with album and artist pages. Tap the artist or album name on Now Playing to open them.
 - Albums play in disc and track order, so post-rock and live albums run on without gaps; songs without a track number follow by title.
