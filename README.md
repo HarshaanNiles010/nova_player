@@ -22,7 +22,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - The queue sheet on Now Playing shows queued songs and everything after them. Drag to reorder, tap a song to play it now.
 - A "Recently played" tab next to the queue lists the last 50 songs you played, newest first. Skipped songs are left out. Tap one to play it now without losing the queue.
 - Select several songs in any song list (tracks, an album, artist, folder or playlist): long-press one, then tap more, or **Select all** for the songs shown. The bar at the bottom adds them to the queue or a playlist, edits their tags, removes them from the playlist you are in, or moves the files to the phone's trash after Android asks you (Android 11 and newer). **Undo** brings them back; Android deletes trashed files for good after 30 days. Back clears the selection. A single song's menu is under ⋮ → **More**.
-- Smart shuffle: Settings → Shuffle. Every song still plays, in an order you configure: favour songs you finish over ones you skip, hold back songs played in the last few days, and keep the same artist from playing within three songs. Off by default, which is plain random.
+- Smart shuffle: Settings → Shuffle. Every song still plays, in an order you configure: favour songs you finish over ones you skip, hold back songs played in the last few days, and spread each artist through the list so the same one doesn't play within three songs. Off by default, which is plain random.
 - Queued songs stay put when you shuffle (in the app, or from a car or Bluetooth device), jump to another song, or close the app.
 - Reopening the app brings back the last song, paused where you left it, with shuffle as you left it.
 - Sleep timer: pause after 15 to 60 minutes or at the end of the song, fading out over the last 10 seconds.
@@ -44,7 +44,6 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Make your own playlists and drag songs into any order.
 - Make a playlist from what you've played: My Playlists → From history (or Make a playlist from these on the Recently played tab). Pick today, 7 days, 30 days, a year or all time, untick anything you don't want, and name it. Skipped songs are left out.
 - Export a playlist as `.m3u`, or import one from another player (songs are matched by file name).
-- Make a playlist from what you've played: My Playlists → From history (or Make a playlist from these on the Recently played tab). Pick today, 7 days, 30 days, a year or all time, untick anything you don't want, and name it. Skipped songs are left out.
 - A heart on Now Playing adds the song to Favourites.
 - Smart playlists:
   - the last 50 songs played
