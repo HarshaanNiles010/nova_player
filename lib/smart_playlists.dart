@@ -6,16 +6,49 @@ import 'song.dart';
 
 const smartPlaylistSize = 50;
 
-/// Distinct songs from [history] that counted as a play, most recent first.
-List<Song> recentlyPlayed(List<PlayRecord> history, List<Song> library) {
+/// How far back to look when making a playlist from listening history.
+enum HistoryPeriod {
+  today('Today'),
+  week('7 days'),
+  month('30 days'),
+  year('1 year'),
+  all('All time');
+
+  const HistoryPeriod(this.label);
+
+  final String label;
+
+  DateTime? since(DateTime now) => switch (this) {
+    HistoryPeriod.today => DateTime(now.year, now.month, now.day),
+    HistoryPeriod.week => now.subtract(const Duration(days: 7)),
+    HistoryPeriod.month => now.subtract(const Duration(days: 30)),
+    HistoryPeriod.year => now.subtract(const Duration(days: 365)),
+    HistoryPeriod.all => null,
+  };
+}
+
+/// Distinct songs from [history] that counted as a play, most recent first,
+/// optionally only plays from [since] on.
+List<Song> recentlyPlayed(
+  List<PlayRecord> history,
+  List<Song> library, {
+  DateTime? since,
+  int limit = smartPlaylistSize,
+}) {
   final byKey = {for (final song in library) song.key: song};
   final seen = <String>{};
-  final records = history.where((r) => r.countsAsPlay).toList()
-    ..sort((a, b) => b.start.compareTo(a.start));
+  final records =
+      history
+          .where(
+            (r) =>
+                r.countsAsPlay && (since == null || !r.start.isBefore(since)),
+          )
+          .toList()
+        ..sort((a, b) => b.start.compareTo(a.start));
   return [
     for (final r in records)
       if (seen.add(r.songKey)) ?byKey[r.songKey],
-  ].take(smartPlaylistSize).toList();
+  ].take(limit).toList();
 }
 
 List<Song> newestSongs(List<Song> library) =>

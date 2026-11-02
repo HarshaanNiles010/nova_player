@@ -2990,6 +2990,11 @@ class PlaylistsPage extends StatelessWidget {
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => openHistoryPlaylist(Navigator.of(context), player),
+        icon: const Icon(Icons.history_rounded),
+        label: const Text('From history'),
+      ),
       body: ListenableBuilder(
         listenable: store,
         builder: (context, _) {
@@ -3003,7 +3008,8 @@ class PlaylistsPage extends StatelessWidget {
             );
           }
           return ListView(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            // Clears the From history button.
+            padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
             children: [
               for (final (name, songs) in [
                 for (final name in names)
@@ -3060,6 +3066,176 @@ class PlaylistsPage extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+void openHistoryPlaylist(NavigatorState navigator, PlayerController player) =>
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => _HistoryPlaylistPage(player: player),
+      ),
+    );
+
+/// Picks songs you played in a period and saves them as a playlist.
+class _HistoryPlaylistPage extends StatefulWidget {
+  const _HistoryPlaylistPage({required this.player});
+
+  final PlayerController player;
+
+  @override
+  State<_HistoryPlaylistPage> createState() => _HistoryPlaylistPageState();
+}
+
+class _HistoryPlaylistPageState extends State<_HistoryPlaylistPage> {
+  List<PlayRecord>? _history;
+  HistoryPeriod _period = HistoryPeriod.month;
+  List<Song> _songs = const [];
+
+  /// Unticked rather than ticked, so songs start ticked in any period.
+  final Set<String> _unticked = {};
+
+  @override
+  void initState() {
+    super.initState();
+    ListeningHistory.instance.load().then((history) {
+      if (!mounted) return;
+      final current = widget.player.currentListen;
+      _history = [...history, ?current];
+      _select(_period);
+    });
+  }
+
+  void _select(HistoryPeriod period) => setState(() {
+    final library = widget.player.library;
+    _period = period;
+    _songs = recentlyPlayed(
+      _history!,
+      library,
+      since: period.since(DateTime.now()),
+      limit: library.length,
+    );
+  });
+
+  List<Song> get _picked => [
+    for (final song in _songs)
+      if (!_unticked.contains(song.id)) song,
+  ];
+
+  Future<void> _save() async {
+    final name = await _askPlaylistName(context);
+    if (name == null || name.isEmpty || !mounted) return;
+    final songs = _picked;
+    // Adds to a playlist of that name rather than overwriting it.
+    await PlaylistStore.instance.addAll(name, songs);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text('Added ${_trackCount(songs.length)} to $name')),
+      );
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final picked = _picked.length;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Playlist from history')),
+      bottomNavigationBar: _songs.isEmpty
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: FilledButton(
+                  onPressed: picked == 0 ? null : _save,
+                  child: Text('Create with ${_trackCount(picked)}'),
+                ),
+              ),
+            ),
+      body: _history == null
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      for (final period in HistoryPeriod.values)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(period.label),
+                            selected: period == _period,
+                            onSelected: (_) => _select(period),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (_songs.isEmpty)
+                  const Expanded(
+                    child: _LibraryMessage(
+                      icon: Icons.history_rounded,
+                      title: 'Nothing played in this period',
+                      message: 'Try a longer one. Skipped songs are left out.',
+                    ),
+                  )
+                else ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 12, 0),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text('$picked of ${_songs.length}')),
+                        TextButton(
+                          onPressed: () => setState(() {
+                            if (picked == _songs.length) {
+                              _unticked.addAll(_songs.map((s) => s.id));
+                            } else {
+                              _unticked.removeAll(_songs.map((s) => s.id));
+                            }
+                          }),
+                          child: Text(
+                            picked == _songs.length
+                                ? 'Select none'
+                                : 'Select all',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _songs.length,
+                      itemBuilder: (context, index) {
+                        final song = _songs[index];
+                        return CheckboxListTile(
+                          value: !_unticked.contains(song.id),
+                          secondary: NovaArtwork(song: song, size: 46),
+                          title: Text(
+                            song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            song.artist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onChanged: (ticked) => setState(() {
+                            ticked == true
+                                ? _unticked.remove(song.id)
+                                : _unticked.add(song.id);
+                          }),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
     );
   }
 }
@@ -4072,9 +4248,20 @@ class _RecentlyPlayedState extends State<_RecentlyPlayed> {
         }
         return ListView.builder(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          itemCount: songs.length,
+          itemCount: songs.length + 1,
           itemBuilder: (context, index) {
-            final song = songs[index];
+            if (index == 0) {
+              return ListTile(
+                leading: const Icon(Icons.playlist_add_rounded),
+                title: const Text('Make a playlist from these'),
+                onTap: () {
+                  // Closes the sheet: it would hide the saved message.
+                  final navigator = Navigator.of(context)..pop();
+                  openHistoryPlaylist(navigator, widget.controller);
+                },
+              );
+            }
+            final song = songs[index - 1];
             return ListTile(
               leading: NovaArtwork(song: song, size: 46),
               title: Text(

@@ -112,4 +112,23 @@ void main() {
     }
     expect(sum / 20000, closeTo(0.2, 0.01));
   });
+
+  test('history period limits recently played', () {
+    final now = DateTime(2026, 10, 20, 12);
+    final library = [song('old'), song('new'), song('skipped')];
+    final history = [
+      rec('old', 180, day: 1),
+      rec('new', 180, day: 15),
+      rec('skipped', 3, day: 19),
+    ];
+    List<String> played(HistoryPeriod period) => recentlyPlayed(
+      history,
+      library,
+      since: period.since(now),
+      limit: library.length,
+    ).map((s) => s.id).toList();
+    expect(played(HistoryPeriod.week), ['new']);
+    expect(played(HistoryPeriod.all), ['new', 'old']);
+    expect(played(HistoryPeriod.today), isEmpty);
+  });
 }

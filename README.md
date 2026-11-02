@@ -41,6 +41,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 
 **Playlists**
 - Make your own playlists and drag songs into any order.
+- Make a playlist from what you've played: My Playlists → From history (or Make a playlist from these on the Recently played tab). Pick today, 7 days, 30 days, a year or all time, untick anything you don't want, and name it. Skipped songs are left out.
 - Export a playlist as `.m3u`, or import one from another player (songs are matched by file name).
 - A heart on Now Playing adds the song to Favourites.
 - Smart playlists:
