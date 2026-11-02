@@ -22,6 +22,7 @@ import 'music_library.dart';
 import 'player_controller.dart';
 import 'playlists.dart';
 import 'queue_mode.dart';
+import 'replay_gain.dart';
 import 'rule_playlist_editor.dart';
 import 'rule_playlists.dart';
 import 'search_bar_style.dart';
@@ -63,6 +64,7 @@ class _MusicHomePageState extends State<MusicHomePage>
   GroupBy _groupBy = GroupBy.none;
   SearchBarStyle _searchBarStyle = SearchBarStyle.banner;
   SongSort _sort = SongSort.title;
+  LevellingMode _levelling = LevellingMode.off;
 
   /// [_songs] in the chosen order; the library itself stays in title order.
   List<Song> _sortedSongs = const [];
@@ -189,6 +191,8 @@ class _MusicHomePageState extends State<MusicHomePage>
     // Before anything plays: a newer checkpoint would overwrite the leftover one.
     await ListeningHistory.instance.recoverPending();
     await _player.setQueueMode(await _settings.loadQueueMode());
+    _levelling = await _settings.loadLevelling();
+    await _player.setLevelling(_levelling);
     _groupBy = await _settings.loadGroupBy();
     _searchBarStyle = await _settings.loadSearchBarStyle();
     _sort = await _settings.loadSongSort();
@@ -354,6 +358,12 @@ class _MusicHomePageState extends State<MusicHomePage>
           onModeChanged: (mode) async {
             await _settings.saveQueueMode(mode);
             await _player.setQueueMode(mode);
+          },
+          initialLevelling: _levelling,
+          onLevellingChanged: (mode) async {
+            _levelling = mode;
+            await _settings.saveLevelling(mode);
+            await _player.setLevelling(mode);
           },
           initialSearchBarStyle: _searchBarStyle,
           onSearchBarStyleChanged: (style) async {
@@ -1429,7 +1439,9 @@ class NowPlayingPage extends StatelessWidget {
                 ],
               ),
             ),
-            SizedBox(height: wide ? 8 : 26),
+            const SizedBox(height: 8),
+            _QualityLabel(controller: controller, song: song),
+            SizedBox(height: wide ? 8 : 18),
             _WaveformSeekBar(
               controller: controller,
               song: song,
@@ -1578,6 +1590,40 @@ class NowPlayingPage extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// The file's format and audio details, and any volume levelling applied.
+class _QualityLabel extends StatelessWidget {
+  const _QualityLabel({required this.controller, required this.song});
+
+  final PlayerController controller;
+  final Song song;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, Object?>>(
+      future: MusicLibrary().loadAudioInfo(song),
+      builder: (context, snapshot) {
+        final info = snapshot.connectionState == ConnectionState.done
+            ? snapshot.data ?? const <String, Object?>{}
+            : const <String, Object?>{};
+        final gain = controller.levelGain;
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            [
+              qualityLabel(song.format, info),
+              if (gain != null)
+                '${gain > 0 ? '+' : ''}${gain.toStringAsFixed(1)} dB',
+            ].join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
+        );
+      },
     );
   }
 }
@@ -3807,6 +3853,8 @@ class SettingsPage extends StatefulWidget {
     required this.onModeChanged,
     required this.initialSearchBarStyle,
     required this.onSearchBarStyleChanged,
+    required this.initialLevelling,
+    required this.onLevellingChanged,
     required this.onReload,
     required this.onFindDuplicates,
     required this.equalizer,
@@ -3818,6 +3866,8 @@ class SettingsPage extends StatefulWidget {
   final Future<void> Function(QueueMode mode) onModeChanged;
   final SearchBarStyle initialSearchBarStyle;
   final Future<void> Function(SearchBarStyle style) onSearchBarStyleChanged;
+  final LevellingMode initialLevelling;
+  final Future<void> Function(LevellingMode mode) onLevellingChanged;
 
   /// Reloads the library on the home screen.
   final Future<void> Function() onReload;
@@ -3832,6 +3882,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   late QueueMode _mode;
   late SearchBarStyle _searchBarStyle;
+  late LevellingMode _levelling;
   String? _lyricsFolder;
   List<({String uri, String name})> _musicFolders = const [];
   bool _scanning = false;
@@ -3841,6 +3892,7 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     _mode = widget.initialMode;
     _searchBarStyle = widget.initialSearchBarStyle;
+    _levelling = widget.initialLevelling;
     widget.themeController.addListener(_themeChanged);
     MusicLibrary().lyricsFolder().then((folder) {
       if (mounted) setState(() => _lyricsFolder = folder);
@@ -4035,6 +4087,13 @@ class _SettingsPageState extends State<SettingsPage> {
                   : 'Find new, moved or deleted songs',
             ),
             onTap: _scanning ? null : _rescan,
+          ),
+          ListTile(
+            leading: const Icon(Icons.volume_up_rounded),
+            title: const Text('Volume levelling'),
+            subtitle: Text(_levelling.title),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _open('Volume levelling', _volumeLevelling),
           ),
           if (widget.equalizer case final equalizer?)
             ListTile(
@@ -4342,6 +4401,27 @@ class _SettingsPageState extends State<SettingsPage> {
                 final saved = _select(mode);
                 setPageState(() {});
                 await saved;
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _volumeLevelling(BuildContext context) {
+    return StatefulBuilder(
+      builder: (context, setPageState) => ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        children: [
+          for (final mode in LevellingMode.values)
+            _ChoiceCard(
+              selected: _levelling == mode,
+              title: Text(mode.title),
+              body: Text(mode.description),
+              onTap: () async {
+                setState(() => _levelling = mode);
+                setPageState(() {});
+                await widget.onLevellingChanged(mode);
               },
             ),
         ],

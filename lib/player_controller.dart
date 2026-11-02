@@ -9,6 +9,7 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'listening_history.dart';
 import 'music_library.dart';
 import 'queue_mode.dart';
+import 'replay_gain.dart';
 import 'song.dart';
 
 class PlayerController extends ChangeNotifier {
@@ -52,9 +53,59 @@ class PlayerController extends ChangeNotifier {
       defaultTargetPlatform == TargetPlatform.android
       ? AndroidEqualizer()
       : null;
+  final AndroidLoudnessEnhancer? _boost =
+      defaultTargetPlatform == TargetPlatform.android
+      ? AndroidLoudnessEnhancer()
+      : null;
   late final AudioPlayer player = AudioPlayer(
-    audioPipeline: AudioPipeline(androidAudioEffects: [?equalizer]),
+    audioPipeline: AudioPipeline(androidAudioEffects: [?equalizer, ?_boost]),
   );
+
+  LevellingMode _levelling = LevellingMode.off;
+
+  /// The gain in dB the current song plays at; null when it is left alone.
+  double? levelGain;
+
+  /// Player volume levelling leaves; the sleep timer fades from here.
+  double _levelVolume = 1;
+
+  String? _levelledSong;
+
+  Future<void> setLevelling(LevellingMode mode) async {
+    _levelling = mode;
+    _levelledSong = null;
+    await _applyLevel();
+  }
+
+  Future<void> _applyLevel() async {
+    final song = currentSong;
+    if (song?.id == _levelledSong) return;
+    _levelledSong = song?.id;
+    final mode = _levelling;
+    final gain = song == null || mode == LevellingMode.off
+        ? null
+        : gainFromTags(await MusicLibrary().loadReplayGainTags(song), mode);
+    // Moved on while the tags were read; that song applied its own.
+    if (song?.id != _levelledSong || mode != _levelling) return;
+    levelGain = gain;
+    _levelVolume = volumeForGain(gain ?? 0);
+    await player.setVolume(_levelVolume);
+    final boost = _boost;
+    if (boost != null) {
+      final boosting = (gain ?? 0) > 0;
+      if (boosting) await boost.setTargetGain(gain!);
+      await boost.setEnabled(boosting);
+    }
+    notifyListeners();
+    // Read ahead, so a gapless change to the next song is levelled at once.
+    final next = (player.currentIndex ?? -1) + 1;
+    if (mode != LevellingMode.off &&
+        next > 0 &&
+        next < _activeSequence.length) {
+      unawaited(MusicLibrary().loadReplayGainTags(_activeSequence[next]));
+    }
+  }
+
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   final List<Song> _activeSequence = [];
   final List<Song> _queue = [];
@@ -242,6 +293,7 @@ class PlayerController extends ChangeNotifier {
     }
     _hasSelection = true;
     _trackListening();
+    await _applyLevel();
     notifyListeners();
     // just_audio's play future completes only after playback pauses or ends.
     if (autoplay) unawaited(player.play());
@@ -545,6 +597,7 @@ class PlayerController extends ChangeNotifier {
 
   void _onIndexChanged(int? index) {
     _trackListening();
+    unawaited(_applyLevel());
     if (_rearranging == null &&
         index != null &&
         index >= _activeSequence.length - 3 &&
@@ -688,7 +741,7 @@ class PlayerController extends ChangeNotifier {
       final volume = left < _sleepFade
           ? left.inMilliseconds / _sleepFade.inMilliseconds
           : 1.0;
-      unawaited(player.setVolume(volume.clamp(0.0, 1.0)));
+      unawaited(player.setVolume(volume.clamp(0.0, 1.0) * _levelVolume));
       notifyListeners();
     });
     notifyListeners();
@@ -699,7 +752,7 @@ class PlayerController extends ChangeNotifier {
     _sleepTicker = null;
     _sleepAt = null;
     _sleepAfterSong = false;
-    unawaited(player.setVolume(1));
+    unawaited(player.setVolume(_levelVolume));
     notifyListeners();
   }
 
