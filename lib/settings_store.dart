@@ -7,6 +7,7 @@ import 'group_by.dart';
 import 'queue_mode.dart';
 import 'search_bar_style.dart';
 import 'song.dart';
+import 'song_sort.dart';
 
 class SettingsStore {
   static const _queueModeKey = 'queue_mode';
@@ -19,6 +20,7 @@ class SettingsStore {
   static const _themeModeKey = 'theme_mode';
   static const _fontIdKey = 'font_id';
   static const _groupByKey = 'group_by';
+  static const _songSortKey = 'song_sort';
   static const _searchBarStyleKey = 'search_bar_style';
   static const _textScaleKey = 'text_scale';
   static const _downloadedThemesKey = 'downloaded_themes';
@@ -192,6 +194,21 @@ class SettingsStore {
     await (await SharedPreferences.getInstance()).setString(
       _searchBarStyleKey,
       style.name,
+    );
+  }
+
+  Future<SongSort> loadSongSort() async {
+    final value = (await SharedPreferences.getInstance()).getString(
+      _songSortKey,
+    );
+    return SongSort.values.where((sort) => sort.name == value).firstOrNull ??
+        SongSort.title;
+  }
+
+  Future<void> saveSongSort(SongSort sort) async {
+    await (await SharedPreferences.getInstance()).setString(
+      _songSortKey,
+      sort.name,
     );
   }
 
