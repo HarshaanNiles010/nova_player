@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'group_by.dart';
 import 'queue_mode.dart';
+import 'search_bar_style.dart';
 import 'song.dart';
 
 class SettingsStore {
@@ -18,6 +19,7 @@ class SettingsStore {
   static const _themeModeKey = 'theme_mode';
   static const _fontIdKey = 'font_id';
   static const _groupByKey = 'group_by';
+  static const _searchBarStyleKey = 'search_bar_style';
   static const _textScaleKey = 'text_scale';
   static const _downloadedThemesKey = 'downloaded_themes';
   static const _downloadedFontsKey = 'downloaded_fonts';
@@ -174,6 +176,23 @@ class SettingsStore {
 
   Future<void> saveThemeId(String id) async {
     await (await SharedPreferences.getInstance()).setString(_themeIdKey, id);
+  }
+
+  Future<SearchBarStyle> loadSearchBarStyle() async {
+    final value = (await SharedPreferences.getInstance()).getString(
+      _searchBarStyleKey,
+    );
+    return SearchBarStyle.values
+            .where((style) => style.name == value)
+            .firstOrNull ??
+        SearchBarStyle.banner;
+  }
+
+  Future<void> saveSearchBarStyle(SearchBarStyle style) async {
+    await (await SharedPreferences.getInstance()).setString(
+      _searchBarStyleKey,
+      style.name,
+    );
   }
 
   Future<GroupBy> loadGroupBy() async {
