@@ -49,3 +49,14 @@ int activeLyricIndex(List<LyricLine> lines, Duration position) {
   }
   return active;
 }
+
+/// How many lines fit on a shared lyrics card.
+const maxPickedLines = 5;
+
+/// Ticks or unticks line [index]; false when the card is already full.
+bool togglePickedLine(Set<int> picked, int index) {
+  if (picked.remove(index)) return true;
+  if (picked.length >= maxPickedLines) return false;
+  picked.add(index);
+  return true;
+}

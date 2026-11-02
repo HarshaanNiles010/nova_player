@@ -146,6 +146,14 @@ class MusicLibrary {
           .catchError((Object _) => null)
           .then((info) => info ?? const {});
 
+  /// [lines] in Latin letters; null when the phone cannot (before Android 10).
+  Future<List<String>?> romanize(List<String> lines) =>
+      _channel.invokeListMethod<String>('romanize', {'lines': lines});
+
+  /// Opens the share sheet for a PNG image.
+  Future<void> shareImage(Uint8List bytes) =>
+      _channel.invokeMethod<void>('shareImage', {'bytes': bytes});
+
   Future<String?> loadLyrics(Song song) => _lyrics[song.id] ??= _channel
       .invokeMethod<String>('getLyrics', {
         'uri': song.uri.toString(),

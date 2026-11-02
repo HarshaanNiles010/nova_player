@@ -1,6 +1,7 @@
 package com.novaplayer.nova_player
 
 import android.Manifest
+import android.content.ClipData
 import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -16,10 +17,12 @@ import android.os.Environment
 import android.os.storage.StorageManager
 import android.provider.MediaStore
 import android.util.Size
+import androidx.core.content.FileProvider
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingDeque
@@ -86,6 +89,31 @@ class MainActivity : AudioServiceActivity() {
                         val info = audioInfo(uri)
                         runOnUiThread { result.success(info) }
                     }
+                }
+                "romanize" -> {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                        result.success(null)
+                    } else {
+                        val lines = call.argument<List<String>>("lines").orEmpty()
+                        lyricsExecutor.execute {
+                            val latin = Romanizer.romanize(lines)
+                            runOnUiThread { result.success(latin) }
+                        }
+                    }
+                }
+                "shareImage" -> {
+                    val folder = File(cacheDir, "shared").apply { mkdirs() }
+                    val file = File(folder, "nova-lyrics.png")
+                    file.writeBytes(call.argument<ByteArray>("bytes")!!)
+                    val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
+                    val send = Intent(Intent.ACTION_SEND)
+                        .setType("image/png")
+                        .putExtra(Intent.EXTRA_STREAM, uri)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    // The chooser previews the image through this, and needs the grant too.
+                    send.clipData = ClipData.newRawUri(null, uri)
+                    startActivity(Intent.createChooser(send, null))
+                    result.success(null)
                 }
                 "getLyricsFolder" -> result.success(
                     lrcFolder.displayName()?.let { if (lrcFolder.writable()) it else "$it (read only)" }
