@@ -9,7 +9,7 @@ import java.nio.charset.Charset
 /**
  * Reads embedded lyrics without decoding audio: Vorbis comments (FLAC, Ogg Opus/Vorbis),
  * ID3v2.3/2.4 USLT or TXXX frames (MP3) and the iTunes ©lyr atom (M4A).
- * Returns the raw text, often LRC.
+ * Returns the raw text, often LRC. [readTags] reads other text tags the same way.
  */
 object LyricsReader {
     private val lyricKeys = setOf("LYRICS", "UNSYNCEDLYRICS", "SYNCEDLYRICS", "USLT")
@@ -17,25 +17,28 @@ object LyricsReader {
     // Tags can hold large cover art; give up rather than buffer an absurd amount.
     private const val MAX_TAG_BYTES = 32 * 1024 * 1024
 
-    fun read(input: InputStream): String? = try {
+    fun read(input: InputStream): String? = readTags(input, lyricKeys).values.firstOrNull()
+
+    /** The text tags named in [keys] (upper case), in file order; empty when there are none. */
+    fun readTags(input: InputStream, keys: Set<String>): Map<String, String> = try {
         val data = DataInputStream(input.buffered())
         val magic = ByteArray(4)
         data.readFully(magic)
         when {
-            magic.startsWith("fLaC") -> readFlac(data)
-            magic.startsWith("OggS") -> readOgg(data)
-            magic.startsWith("ID3") -> readId3(data, magic[3].toInt())
+            magic.startsWith("fLaC") -> readFlac(data, keys)
+            magic.startsWith("OggS") -> readOgg(data, keys)
+            magic.startsWith("ID3") -> readId3(data, magic[3].toInt(), keys)
             else -> {
                 val type = ByteArray(4)
                 data.readFully(type)
-                if (type.startsWith("ftyp")) readMp4(data, int(magic, 0).toLong()) else null
+                if (type.startsWith("ftyp")) readMp4(data, int(magic, 0).toLong(), keys) else emptyMap()
             }
         }
     } catch (_: EOFException) {
-        null
+        emptyMap()
     }
 
-    private fun readFlac(data: DataInputStream): String? {
+    private fun readFlac(data: DataInputStream, keys: Set<String>): Map<String, String> {
         while (true) {
             val header = data.readUnsignedByte()
             val length = (data.readUnsignedByte() shl 16) or
@@ -43,15 +46,15 @@ object LyricsReader {
             if (header and 0x7F == 4) {
                 val block = ByteArray(length)
                 data.readFully(block)
-                return vorbisLyrics(block, 0)
+                return vorbisTags(block, 0, keys)
             }
             data.skipFully(length)
-            if (header and 0x80 != 0) return null
+            if (header and 0x80 != 0) return emptyMap()
         }
     }
 
     /** The comment header is the second Ogg packet; it may span several pages. */
-    private fun readOgg(data: DataInputStream): String? {
+    private fun readOgg(data: DataInputStream, keys: Set<String>): Map<String, String> {
         var packetIndex = 0
         val packet = ByteArrayOutputStream()
         var magicRead = true
@@ -59,7 +62,7 @@ object LyricsReader {
             if (!magicRead) {
                 val magic = ByteArray(4)
                 data.readFully(magic)
-                if (!magic.startsWith("OggS")) return null
+                if (!magic.startsWith("OggS")) return emptyMap()
             }
             magicRead = false
             data.skipFully(22) // version, type, granule, serial, sequence, CRC
@@ -69,7 +72,7 @@ object LyricsReader {
                     val chunk = ByteArray(size)
                     data.readFully(chunk)
                     packet.write(chunk)
-                    if (packet.size() > MAX_TAG_BYTES) return null
+                    if (packet.size() > MAX_TAG_BYTES) return emptyMap()
                 } else {
                     data.skipFully(size)
                 }
@@ -77,10 +80,10 @@ object LyricsReader {
                     if (packetIndex == 1) {
                         val bytes = packet.toByteArray()
                         return when {
-                            bytes.startsWith("OpusTags") -> vorbisLyrics(bytes, 8)
+                            bytes.startsWith("OpusTags") -> vorbisTags(bytes, 8, keys)
                             bytes.size > 7 && bytes[0] == 3.toByte() &&
-                                bytes.startsWith("vorbis", 1) -> vorbisLyrics(bytes, 7)
-                            else -> null
+                                bytes.startsWith("vorbis", 1) -> vorbisTags(bytes, 7, keys)
+                            else -> emptyMap()
                         }
                     }
                     packetIndex++
@@ -89,8 +92,8 @@ object LyricsReader {
         }
     }
 
-    /** Walks top-level atoms (skipping the audio) until moov, then finds udta/meta/ilst/©lyr. */
-    private fun readMp4(data: DataInputStream, ftypSize: Long): String? {
+    /** Walks top-level atoms (skipping the audio) until moov, then reads udta/meta/ilst. */
+    private fun readMp4(data: DataInputStream, ftypSize: Long, keys: Set<String>): Map<String, String> {
         data.skipFully(ftypSize - 8)
         while (true) {
             var size = data.readInt().toLong() and 0xFFFFFFFFL
@@ -101,21 +104,47 @@ object LyricsReader {
                 size = data.readLong()
                 header = 16L
             }
-            if (size == 0L) return null // last atom runs to end of file and is not moov
-            if (size < header) return null
+            if (size == 0L) return emptyMap() // last atom runs to end of file and is not moov
+            if (size < header) return emptyMap()
             if (!type.startsWith("moov")) {
                 data.skipFully(size - header)
                 continue
             }
-            if (size - header > MAX_TAG_BYTES) return null
+            if (size - header > MAX_TAG_BYTES) return emptyMap()
             val moov = ByteArray((size - header).toInt())
             data.readFully(moov)
-            val (start, end) = findAtom(moov, 0, moov.size, listOf("udta", "meta", "ilst", "\u00A9lyr", "data"))
-                ?: return null
-            // data atom body: 4-byte type, 4-byte locale, then UTF-8 text.
-            if (end - start < 8) return null
-            return String(moov, start + 8, end - start - 8, Charsets.UTF_8)
+            val (start, end) = findAtom(moov, 0, moov.size, listOf("udta", "meta", "ilst"))
+                ?: return emptyMap()
+            val tags = linkedMapOf<String, String>()
+            if ("LYRICS" in keys) {
+                mp4Text(moov, start, end, "\u00A9lyr")?.let { tags["LYRICS"] = it }
+            }
+            // Freeform "----" atoms hold tags like replaygain_track_gain.
+            var p = start
+            while (p + 8 <= end) {
+                val atomSize = int(moov, p)
+                if (atomSize < 8 || p + atomSize > end) break
+                if (String(moov, p + 4, 4, Charsets.ISO_8859_1) == "----") {
+                    val name = findAtom(moov, p + 8, p + atomSize, listOf("name"))
+                    // name atom body: 4 bytes of version/flags, then the text.
+                    val key = name?.takeIf { it.second - it.first > 4 }?.let {
+                        String(moov, it.first + 4, it.second - it.first - 4, Charsets.UTF_8).uppercase()
+                    }
+                    if (key in keys) {
+                        mp4Text(moov, p + 8, p + atomSize, null)?.let { tags[key!!] = it }
+                    }
+                }
+                p += atomSize
+            }
+            return tags
         }
+    }
+
+    /** The text of a data atom, inside [parent] when given. */
+    private fun mp4Text(b: ByteArray, start: Int, end: Int, parent: String?): String? {
+        val (from, to) = findAtom(b, start, end, listOfNotNull(parent, "data")) ?: return null
+        // data atom body: 4-byte type, 4-byte locale, then UTF-8 text.
+        return if (to - from < 8) null else String(b, from + 8, to - from - 8, Charsets.UTF_8)
     }
 
     private fun findAtom(b: ByteArray, start: Int, end: Int, path: List<String>): Pair<Int, Int>? {
@@ -142,7 +171,8 @@ object LyricsReader {
         return null
     }
 
-    private fun vorbisLyrics(b: ByteArray, start: Int): String? {
+    private fun vorbisTags(b: ByteArray, start: Int, keys: Set<String>): Map<String, String> {
+        val tags = linkedMapOf<String, String>()
         var p = start
         fun u32(): Int {
             if (p + 4 > b.size) throw EOFException()
@@ -155,29 +185,31 @@ object LyricsReader {
         p += vendorLength
         repeat(u32()) {
             val length = u32()
-            if (length < 0 || p + length > b.size) return null
+            if (length < 0 || p + length > b.size) return tags
             // Only decode the key; picture comments can be megabytes long.
             val equals = (p until p + minOf(length, 64)).firstOrNull { b[it] == '='.code.toByte() }
-            if (equals != null &&
-                String(b, p, equals - p, Charsets.US_ASCII).uppercase() in lyricKeys
-            ) {
-                return String(b, equals + 1, p + length - equals - 1, Charsets.UTF_8)
+            if (equals != null) {
+                val key = String(b, p, equals - p, Charsets.US_ASCII).uppercase()
+                if (key in keys && key !in tags) {
+                    tags[key] = String(b, equals + 1, p + length - equals - 1, Charsets.UTF_8)
+                }
             }
             p += length
         }
-        return null
+        return tags
     }
 
-    private fun readId3(data: DataInputStream, major: Int): String? {
-        if (major !in 3..4) return null // ID3v2.2 uses 3-letter frame IDs
+    private fun readId3(data: DataInputStream, major: Int, keys: Set<String>): Map<String, String> {
+        if (major !in 3..4) return emptyMap() // ID3v2.2 uses 3-letter frame IDs
         data.readUnsignedByte() // revision
         val flags = data.readUnsignedByte()
         val size = syncsafe(data.readInt())
-        if (size > MAX_TAG_BYTES) return null
+        if (size > MAX_TAG_BYTES) return emptyMap()
         val tag = ByteArray(size)
         data.readFully(tag)
         // shortcut: unsynchronised tags are rare in modern files; read them if lyrics go missing.
-        if (flags and 0x80 != 0) return null
+        if (flags and 0x80 != 0) return emptyMap()
+        val tags = linkedMapOf<String, String>()
         var p = 0
         if (flags and 0x40 != 0) {
             val extended = int(tag, 0)
@@ -191,16 +223,19 @@ object LyricsReader {
             val body = p + 10
             if (length <= 0 || body + length > tag.size) break
             when (id) {
-                "USLT" -> return describedText(tag, body + 4, body + length, tag[body].toInt()).second
+                "USLT" -> if ("USLT" in keys && "USLT" !in tags) {
+                    tags["USLT"] = describedText(tag, body + 4, body + length, tag[body].toInt()).second
+                }
                 "TXXX" -> {
                     val (description, value) =
                         describedText(tag, body + 1, body + length, tag[body].toInt())
-                    if (description.uppercase() in lyricKeys) return value
+                    val key = description.uppercase()
+                    if (key in keys && key !in tags) tags[key] = value
                 }
             }
             p = body + length
         }
-        return null
+        return tags
     }
 
     /** Splits "description\0text" in the frame's text encoding. */

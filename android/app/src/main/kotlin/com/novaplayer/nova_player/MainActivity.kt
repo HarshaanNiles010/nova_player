@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaScannerConnection
 import android.net.Uri
@@ -42,6 +44,8 @@ class MainActivity : AudioServiceActivity() {
     // Separate pool: building the .lrc folder index can take seconds and must
     // not hold up cover art.
     private val lyricsExecutor = newestFirstExecutor(1)
+    // Playback waits on these reads, so they must not queue behind the others.
+    private val songInfoExecutor = Executors.newSingleThreadExecutor()
 
     private fun newestFirstExecutor(threads: Int) = ThreadPoolExecutor(
         threads, threads, 0, TimeUnit.MILLISECONDS,
@@ -63,6 +67,26 @@ class MainActivity : AudioServiceActivity() {
                     call.argument<String>("fileName"),
                     result
                 )
+                "getTags" -> {
+                    val uri = call.argument<String>("uri")
+                    val keys = call.argument<List<String>>("keys").orEmpty().toSet()
+                    songInfoExecutor.execute {
+                        val tags = try {
+                            contentResolver.openInputStream(Uri.parse(uri))
+                                ?.use { LyricsReader.readTags(it, keys) }
+                        } catch (_: Exception) {
+                            null
+                        }
+                        runOnUiThread { result.success(tags.orEmpty()) }
+                    }
+                }
+                "getAudioInfo" -> {
+                    val uri = Uri.parse(call.argument<String>("uri"))
+                    songInfoExecutor.execute {
+                        val info = audioInfo(uri)
+                        runOnUiThread { result.success(info) }
+                    }
+                }
                 "getLyricsFolder" -> result.success(
                     lrcFolder.displayName()?.let { if (lrcFolder.writable()) it else "$it (read only)" }
                 )
@@ -361,6 +385,39 @@ class MainActivity : AudioServiceActivity() {
             }
             runOnUiThread { result.success(lyrics) }
         }
+    }
+
+    private fun audioInfo(uri: Uri): Map<String, Int> {
+        val info = mutableMapOf<String, Int>()
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(this, uri, null)
+            if (extractor.trackCount > 0) {
+                val format = extractor.getTrackFormat(0)
+                if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                    info["sampleRate"] = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                }
+                if (format.containsKey("bits-per-sample")) {
+                    info["bits"] = format.getInteger("bits-per-sample")
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            extractor.release()
+        }
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(this, uri)
+            fun read(key: Int) = retriever.extractMetadata(key)?.toIntOrNull()
+            read(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.let { info["bitrate"] = it }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                read(MediaMetadataRetriever.METADATA_KEY_BITS_PER_SAMPLE)?.let { info["bits"] = it }
+            }
+        } catch (_: Exception) {
+        } finally {
+            retriever.release()
+        }
+        return info
     }
 
     private fun thumbnail(bytes: ByteArray, size: Int): ByteArray? {

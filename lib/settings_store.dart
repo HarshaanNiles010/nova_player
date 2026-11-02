@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'group_by.dart';
 import 'queue_mode.dart';
+import 'replay_gain.dart';
 import 'search_bar_style.dart';
 import 'song.dart';
 import 'song_sort.dart';
@@ -20,6 +21,7 @@ class SettingsStore {
   static const _themeModeKey = 'theme_mode';
   static const _fontIdKey = 'font_id';
   static const _groupByKey = 'group_by';
+  static const _levellingKey = 'levelling';
   static const _songSortKey = 'song_sort';
   static const _searchBarStyleKey = 'search_bar_style';
   static const _textScaleKey = 'text_scale';
@@ -209,6 +211,23 @@ class SettingsStore {
     await (await SharedPreferences.getInstance()).setString(
       _songSortKey,
       sort.name,
+    );
+  }
+
+  Future<LevellingMode> loadLevelling() async {
+    final value = (await SharedPreferences.getInstance()).getString(
+      _levellingKey,
+    );
+    return LevellingMode.values
+            .where((mode) => mode.name == value)
+            .firstOrNull ??
+        LevellingMode.off;
+  }
+
+  Future<void> saveLevelling(LevellingMode mode) async {
+    await (await SharedPreferences.getInstance()).setString(
+      _levellingKey,
+      mode.name,
     );
   }
 

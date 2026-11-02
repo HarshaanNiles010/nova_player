@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'replay_gain.dart';
 import 'settings_store.dart';
 import 'song.dart';
 
@@ -123,6 +124,28 @@ class MusicLibrary {
 
   /// Lyrics text (often LRC): embedded in the file, else a matching .lrc in
   /// the lyrics folder, else downloaded ones. Cached per song for this session.
+  static final _replayGainTags = <String, Future<Map<String, String>>>{};
+  static final _audioInfo = <String, Future<Map<String, Object?>>>{};
+
+  /// [song]'s ReplayGain tags; empty when it has none or on other platforms.
+  Future<Map<String, String>> loadReplayGainTags(Song song) =>
+      _replayGainTags[song.id] ??= _channel
+          .invokeMapMethod<String, String>('getTags', {
+            'uri': song.uri.toString(),
+            'keys': replayGainKeys,
+          })
+          .catchError((Object _) => null)
+          .then((tags) => tags ?? const {});
+
+  /// [song]'s sample rate, bit depth and bitrate, those the phone can tell.
+  Future<Map<String, Object?>> loadAudioInfo(Song song) =>
+      _audioInfo[song.id] ??= _channel
+          .invokeMapMethod<String, Object?>('getAudioInfo', {
+            'uri': song.uri.toString(),
+          })
+          .catchError((Object _) => null)
+          .then((info) => info ?? const {});
+
   Future<String?> loadLyrics(Song song) => _lyrics[song.id] ??= _channel
       .invokeMethod<String>('getLyrics', {
         'uri': song.uri.toString(),
