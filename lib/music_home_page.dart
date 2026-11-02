@@ -24,6 +24,7 @@ import 'playlists.dart';
 import 'queue_mode.dart';
 import 'rule_playlist_editor.dart';
 import 'rule_playlists.dart';
+import 'search_bar_style.dart';
 import 'settings_store.dart';
 import 'smart_playlists.dart';
 import 'song.dart';
@@ -59,6 +60,20 @@ class _MusicHomePageState extends State<MusicHomePage>
   String? _error;
   String _query = '';
   GroupBy _groupBy = GroupBy.none;
+  SearchBarStyle _searchBarStyle = SearchBarStyle.banner;
+
+  /// List position to return to when the search is cleared.
+  double _beforeSearch = 0;
+
+  /// Space the floating bar covers at the top of the list.
+  static const _floatingInset = 72.0;
+
+  // A banner would leave the list no room on a sideways phone with a keyboard.
+  SearchBarStyle get _barStyle =>
+      _searchBarStyle == SearchBarStyle.banner &&
+          MediaQuery.orientationOf(context) == Orientation.landscape
+      ? SearchBarStyle.floating
+      : _searchBarStyle;
 
   Map<String, List<Song>> _groupsOf(List<Song> songs) =>
       groupSongs(songs, _groupBy.keyFor);
@@ -88,6 +103,27 @@ class _MusicHomePageState extends State<MusicHomePage>
     });
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
     await _settings.saveGroupBy(group);
+  }
+
+  /// Results start from the top; clearing the search returns to the old place.
+  void _search(String value) {
+    final before = _query.trim();
+    final after = value.trim();
+    if (before.isEmpty && after.isNotEmpty && _scrollController.hasClients) {
+      _beforeSearch = _scrollController.offset;
+    }
+    setState(() => _query = value);
+    if (before == after) return;
+    // After the frame: the list has to be laid out with its new length first.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.jumpTo(
+        (after.isEmpty ? _beforeSearch : 0.0).clamp(
+          0.0,
+          _scrollController.position.maxScrollExtent,
+        ),
+      );
+    });
   }
 
   List<Song> get _visibleSongs {
@@ -124,6 +160,7 @@ class _MusicHomePageState extends State<MusicHomePage>
     await ListeningHistory.instance.recoverPending();
     await _player.setQueueMode(await _settings.loadQueueMode());
     _groupBy = await _settings.loadGroupBy();
+    _searchBarStyle = await _settings.loadSearchBarStyle();
     _hidden = await _settings.loadHidden();
     unawaited(restoreEqualizer(_player.equalizer));
     await _loadLibrary();
@@ -286,6 +323,11 @@ class _MusicHomePageState extends State<MusicHomePage>
             await _settings.saveQueueMode(mode);
             await _player.setQueueMode(mode);
           },
+          initialSearchBarStyle: _searchBarStyle,
+          onSearchBarStyleChanged: (style) async {
+            setState(() => _searchBarStyle = style);
+            await _settings.saveSearchBarStyle(style);
+          },
           onReload: _loadLibrary,
           onFindDuplicates: _openDuplicates,
           equalizer: _player.equalizer,
@@ -337,7 +379,8 @@ class _MusicHomePageState extends State<MusicHomePage>
     final top = list.constraints.precedingScrollExtent + index * rowHeight;
     final position = _scrollController.position;
     final viewport = position.viewportDimension;
-    if (top >= position.pixels &&
+    final covered = _barStyle == SearchBarStyle.floating ? _floatingInset : 0.0;
+    if (top >= position.pixels + covered &&
         top + rowHeight <= position.pixels + viewport) {
       return;
     }
@@ -361,7 +404,111 @@ class _MusicHomePageState extends State<MusicHomePage>
     return selectionScope(_buildScaffold());
   }
 
+  Widget _searchField(InputDecoration decoration) => TextField(
+    controller: _searchController,
+    onChanged: _search,
+    // Focus left here returns after any page or sheet closes, scrolling the
+    // list to the top.
+    onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+    decoration: decoration,
+  );
+
+  Widget _groupByMenu(Widget child) => PopupMenuButton<GroupBy>(
+    tooltip: 'Group by',
+    initialValue: _groupBy,
+    onSelected: _selectGroupBy,
+    itemBuilder: (context) => [
+      for (final group in GroupBy.values)
+        CheckedPopupMenuItem(
+          value: group,
+          checked: group == _groupBy,
+          child: Text(group.label),
+        ),
+    ],
+    child: child,
+  );
+
+  /// Nova, search and Group by, for the banner and the scrolling style.
+  List<Widget> _headerRows() => [
+    Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: _Header(
+        songCount: _songs.length,
+        onMenu: () => _scaffoldKey.currentState?.openDrawer(),
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
+      child: _searchField(
+        const InputDecoration(
+          hintText: 'Search songs, artists, albums',
+          prefixIcon: Icon(Icons.search_rounded),
+          filled: false,
+          border: OutlineInputBorder(borderRadius: BorderRadius.zero),
+        ),
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: _groupByMenu(
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.segment_rounded, size: 18),
+                const SizedBox(width: 8),
+                Text('Group by: ${_groupBy.label}'),
+                const Icon(Icons.arrow_drop_down_rounded),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  ];
+
+  Widget _floatingBar() => Material(
+    elevation: 4,
+    color: Theme.of(context).colorScheme.surfaceContainerHigh,
+    borderRadius: BorderRadius.circular(16),
+    child: SizedBox(
+      height: 56,
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            tooltip: 'Open navigation',
+            icon: const Icon(Icons.menu_rounded),
+          ),
+          Expanded(
+            child: _searchField(
+              const InputDecoration(
+                hintText: 'Search songs, artists, albums',
+                filled: false,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+              ),
+            ),
+          ),
+          _groupByMenu(
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Icon(Icons.segment_rounded),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
   Widget _buildScaffold() {
+    final style = _barStyle;
     return Scaffold(
       key: _scaffoldKey,
       drawer: NovaDrawer(
@@ -392,6 +539,10 @@ class _MusicHomePageState extends State<MusicHomePage>
         bottom: false,
         child: Column(
           children: [
+            if (style == SearchBarStyle.banner) ...[
+              ..._headerRows(),
+              const Divider(height: 1),
+            ],
             Expanded(
               child: Stack(
                 children: [
@@ -411,83 +562,21 @@ class _MusicHomePageState extends State<MusicHomePage>
                       };
                     },
                     child: RefreshIndicator(
+                      edgeOffset: style == SearchBarStyle.floating
+                          ? _floatingInset
+                          : 0,
                       onRefresh: _loadLibrary,
                       child: CustomScrollView(
                         controller: _scrollController,
                         physics: const AlwaysScrollableScrollPhysics(),
                         slivers: [
-                          SliverPadding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                            sliver: SliverToBoxAdapter(
-                              child: _Header(
-                                songCount: _songs.length,
-                                onMenu: () =>
-                                    _scaffoldKey.currentState?.openDrawer(),
-                              ),
+                          if (style == SearchBarStyle.scrolls)
+                            for (final row in _headerRows())
+                              SliverToBoxAdapter(child: row),
+                          if (style == SearchBarStyle.floating)
+                            const SliverToBoxAdapter(
+                              child: SizedBox(height: _floatingInset),
                             ),
-                          ),
-                          SliverPadding(
-                            padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
-                            sliver: SliverToBoxAdapter(
-                              child: TextField(
-                                controller: _searchController,
-                                onChanged: (value) =>
-                                    setState(() => _query = value),
-                                // Focus left here returns after any page or
-                                // sheet closes, scrolling the list to the top.
-                                onTapOutside: (_) => FocusManager
-                                    .instance
-                                    .primaryFocus
-                                    ?.unfocus(),
-                                decoration: const InputDecoration(
-                                  hintText: 'Search songs, artists, albums',
-                                  prefixIcon: Icon(Icons.search_rounded),
-                                  filled: false,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.zero,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          SliverPadding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            sliver: SliverToBoxAdapter(
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: PopupMenuButton<GroupBy>(
-                                  tooltip: 'Group by',
-                                  initialValue: _groupBy,
-                                  onSelected: _selectGroupBy,
-                                  itemBuilder: (context) => [
-                                    for (final group in GroupBy.values)
-                                      CheckedPopupMenuItem(
-                                        value: group,
-                                        checked: group == _groupBy,
-                                        child: Text(group.label),
-                                      ),
-                                  ],
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(8),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.segment_rounded,
-                                          size: 18,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text('Group by: ${_groupBy.label}'),
-                                        const Icon(
-                                          Icons.arrow_drop_down_rounded,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
                           ..._buildLibrarySlivers(),
                           const SliverToBoxAdapter(
                             child: SizedBox(height: 112),
@@ -502,6 +591,14 @@ class _MusicHomePageState extends State<MusicHomePage>
                     bottom: 16,
                     child: _BackToTopButton(controller: _scrollController),
                   ),
+                  // Stops short of the right edge to leave the scroll bar free.
+                  if (style == SearchBarStyle.floating)
+                    Positioned(
+                      top: 8,
+                      left: 12,
+                      right: 44,
+                      child: _floatingBar(),
+                    ),
                 ],
               ),
             ),
@@ -3631,6 +3728,8 @@ class SettingsPage extends StatefulWidget {
     required this.initialMode,
     required this.themeController,
     required this.onModeChanged,
+    required this.initialSearchBarStyle,
+    required this.onSearchBarStyleChanged,
     required this.onReload,
     required this.onFindDuplicates,
     required this.equalizer,
@@ -3640,6 +3739,8 @@ class SettingsPage extends StatefulWidget {
   final QueueMode initialMode;
   final ThemeController themeController;
   final Future<void> Function(QueueMode mode) onModeChanged;
+  final SearchBarStyle initialSearchBarStyle;
+  final Future<void> Function(SearchBarStyle style) onSearchBarStyleChanged;
 
   /// Reloads the library on the home screen.
   final Future<void> Function() onReload;
@@ -3653,6 +3754,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late QueueMode _mode;
+  late SearchBarStyle _searchBarStyle;
   String? _lyricsFolder;
   List<({String uri, String name})> _musicFolders = const [];
   bool _scanning = false;
@@ -3661,6 +3763,7 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _mode = widget.initialMode;
+    _searchBarStyle = widget.initialSearchBarStyle;
     widget.themeController.addListener(_themeChanged);
     MusicLibrary().lyricsFolder().then((folder) {
       if (mounted) setState(() => _lyricsFolder = folder);
@@ -3821,6 +3924,13 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () => _open('Text size', _sizes),
+          ),
+          ListTile(
+            leading: const Icon(Icons.search_rounded),
+            title: const Text('Search bar'),
+            subtitle: Text(_searchBarStyle.title),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _open('Search bar', _searchBar),
           ),
           ListTile(
             leading: const Icon(Icons.folder_open_rounded),
@@ -4155,6 +4265,27 @@ class _SettingsPageState extends State<SettingsPage> {
                 final saved = _select(mode);
                 setPageState(() {});
                 await saved;
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _searchBar(BuildContext context) {
+    return StatefulBuilder(
+      builder: (context, setPageState) => ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        children: [
+          for (final style in SearchBarStyle.values)
+            _ChoiceCard(
+              selected: _searchBarStyle == style,
+              title: Text(style.title),
+              body: Text(style.description),
+              onTap: () async {
+                setState(() => _searchBarStyle = style);
+                setPageState(() {});
+                await widget.onSearchBarStyleChanged(style);
               },
             ),
         ],
