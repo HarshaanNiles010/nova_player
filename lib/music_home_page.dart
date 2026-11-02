@@ -30,6 +30,7 @@ import 'rule_playlists.dart';
 import 'search_bar_style.dart';
 import 'settings_store.dart';
 import 'smart_playlists.dart';
+import 'smart_shuffle.dart';
 import 'song.dart';
 import 'song_sort.dart';
 import 'stats_page.dart';
@@ -195,6 +196,7 @@ class _MusicHomePageState extends State<MusicHomePage>
     await _player.setQueueMode(await _settings.loadQueueMode());
     _levelling = await _settings.loadLevelling();
     await _player.setLevelling(_levelling);
+    await _player.setSmartShuffle(await _settings.loadSmartShuffle());
     _groupBy = await _settings.loadGroupBy();
     _searchBarStyle = await _settings.loadSearchBarStyle();
     _sort = await _settings.loadSongSort();
@@ -366,6 +368,11 @@ class _MusicHomePageState extends State<MusicHomePage>
             _levelling = mode;
             await _settings.saveLevelling(mode);
             await _player.setLevelling(mode);
+          },
+          initialSmartShuffle: _player.smartShuffle,
+          onSmartShuffleChanged: (shuffle) async {
+            await _settings.saveSmartShuffle(shuffle);
+            await _player.setSmartShuffle(shuffle);
           },
           initialSearchBarStyle: _searchBarStyle,
           onSearchBarStyleChanged: (style) async {
@@ -1454,7 +1461,9 @@ class NowPlayingPage extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 IconButton(
-                  tooltip: 'Shuffle',
+                  tooltip: controller.smartShuffle.enabled
+                      ? 'Smart shuffle'
+                      : 'Shuffle',
                   color: controller.shuffleEnabled
                       ? Colors.white
                       : Colors.white54,
@@ -3004,6 +3013,11 @@ class PlaylistsPage extends StatelessWidget {
               icon: Icons.library_music_rounded,
               title: 'No playlists yet',
               message:
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => openHistoryPlaylist(Navigator.of(context), player),
+        icon: const Icon(Icons.history_rounded),
+        label: const Text('From history'),
+      ),
                   'Long-press songs to select them, then tap Add to playlist.',
             );
           }
@@ -3249,6 +3263,176 @@ class SmartPlaylistsPage extends StatelessWidget {
     BuildContext context,
     String title,
     List<Song> Function(List<PlayRecord> history) build,
+void openHistoryPlaylist(NavigatorState navigator, PlayerController player) =>
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => _HistoryPlaylistPage(player: player),
+      ),
+    );
+
+/// Picks songs you played in a period and saves them as a playlist.
+class _HistoryPlaylistPage extends StatefulWidget {
+  const _HistoryPlaylistPage({required this.player});
+
+  final PlayerController player;
+
+  @override
+  State<_HistoryPlaylistPage> createState() => _HistoryPlaylistPageState();
+}
+
+class _HistoryPlaylistPageState extends State<_HistoryPlaylistPage> {
+  List<PlayRecord>? _history;
+  HistoryPeriod _period = HistoryPeriod.month;
+  List<Song> _songs = const [];
+
+  /// Unticked rather than ticked, so songs start ticked in any period.
+  final Set<String> _unticked = {};
+
+  @override
+  void initState() {
+    super.initState();
+    ListeningHistory.instance.load().then((history) {
+      if (!mounted) return;
+      final current = widget.player.currentListen;
+      _history = [...history, ?current];
+      _select(_period);
+    });
+  }
+
+  void _select(HistoryPeriod period) => setState(() {
+    final library = widget.player.library;
+    _period = period;
+    _songs = recentlyPlayed(
+      _history!,
+      library,
+      since: period.since(DateTime.now()),
+      limit: library.length,
+    );
+  });
+
+  List<Song> get _picked => [
+    for (final song in _songs)
+      if (!_unticked.contains(song.id)) song,
+  ];
+
+  Future<void> _save() async {
+    final name = await _askPlaylistName(context);
+    if (name == null || name.isEmpty || !mounted) return;
+    final songs = _picked;
+    // Adds to a playlist of that name rather than overwriting it.
+    await PlaylistStore.instance.addAll(name, songs);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text('Added ${_trackCount(songs.length)} to $name')),
+      );
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final picked = _picked.length;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Playlist from history')),
+      bottomNavigationBar: _songs.isEmpty
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: FilledButton(
+                  onPressed: picked == 0 ? null : _save,
+                  child: Text('Create with ${_trackCount(picked)}'),
+                ),
+              ),
+            ),
+      body: _history == null
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      for (final period in HistoryPeriod.values)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(period.label),
+                            selected: period == _period,
+                            onSelected: (_) => _select(period),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (_songs.isEmpty)
+                  const Expanded(
+                    child: _LibraryMessage(
+                      icon: Icons.history_rounded,
+                      title: 'Nothing played in this period',
+                      message: 'Try a longer one. Skipped songs are left out.',
+                    ),
+                  )
+                else ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 12, 0),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text('$picked of ${_songs.length}')),
+                        TextButton(
+                          onPressed: () => setState(() {
+                            if (picked == _songs.length) {
+                              _unticked.addAll(_songs.map((s) => s.id));
+                            } else {
+                              _unticked.removeAll(_songs.map((s) => s.id));
+                            }
+                          }),
+                          child: Text(
+                            picked == _songs.length
+                                ? 'Select none'
+                                : 'Select all',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _songs.length,
+                      itemBuilder: (context, index) {
+                        final song = _songs[index];
+                        return CheckboxListTile(
+                          value: !_unticked.contains(song.id),
+                          secondary: NovaArtwork(song: song, size: 46),
+                          title: Text(
+                            song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            song.artist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onChanged: (ticked) => setState(() {
+                            ticked == true
+                                ? _unticked.remove(song.id)
+                                : _unticked.add(song.id);
+                          }),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+    );
+  }
+}
+
   ) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) =>
@@ -4293,6 +4477,8 @@ class SettingsPage extends StatefulWidget {
     required this.onSearchBarStyleChanged,
     required this.initialLevelling,
     required this.onLevellingChanged,
+    required this.initialSmartShuffle,
+    required this.onSmartShuffleChanged,
     required this.onReload,
     required this.onFindDuplicates,
     required this.equalizer,
@@ -4306,6 +4492,8 @@ class SettingsPage extends StatefulWidget {
   final Future<void> Function(SearchBarStyle style) onSearchBarStyleChanged;
   final LevellingMode initialLevelling;
   final Future<void> Function(LevellingMode mode) onLevellingChanged;
+  final SmartShuffle initialSmartShuffle;
+  final Future<void> Function(SmartShuffle shuffle) onSmartShuffleChanged;
 
   /// Reloads the library on the home screen.
   final Future<void> Function() onReload;
@@ -4321,6 +4509,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late QueueMode _mode;
   late SearchBarStyle _searchBarStyle;
   late LevellingMode _levelling;
+  late SmartShuffle _smartShuffle;
   String? _lyricsFolder;
   List<({String uri, String name})> _musicFolders = const [];
   bool _scanning = false;
@@ -4331,6 +4520,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _mode = widget.initialMode;
     _searchBarStyle = widget.initialSearchBarStyle;
     _levelling = widget.initialLevelling;
+    _smartShuffle = widget.initialSmartShuffle;
     widget.themeController.addListener(_themeChanged);
     MusicLibrary().lyricsFolder().then((folder) {
       if (mounted) setState(() => _lyricsFolder = folder);
@@ -4532,6 +4722,13 @@ class _SettingsPageState extends State<SettingsPage> {
             subtitle: Text(_levelling.title),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () => _open('Volume levelling', _volumeLevelling),
+          ),
+          ListTile(
+            leading: const Icon(Icons.shuffle_rounded),
+            title: const Text('Shuffle'),
+            subtitle: Text(_smartShuffle.enabled ? 'Smart' : 'Random'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _open('Shuffle', _shuffle),
           ),
           if (widget.equalizer case final equalizer?)
             ListTile(
@@ -4864,6 +5061,52 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _shuffle(BuildContext context) {
+    return StatefulBuilder(
+      builder: (context, setPageState) {
+        void change(SmartShuffle shuffle) {
+          setState(() => _smartShuffle = shuffle);
+          setPageState(() {});
+          widget.onSmartShuffleChanged(shuffle);
+        }
+
+        return ListView(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          children: [
+            SwitchListTile(
+              title: const Text('Smart shuffle'),
+              subtitle: const Text(
+                'Every song still plays, in a smarter order. Off is plain '
+                'random. Turn shuffle on with the button on Now Playing.',
+              ),
+              value: _smartShuffle.enabled,
+              onChanged: (enabled) => change(
+                SmartShuffle(enabled: enabled, rules: _smartShuffle.rules),
+              ),
+            ),
+            const Divider(),
+            for (final rule in SmartShuffleRule.values)
+              CheckboxListTile(
+                title: Text(rule.title),
+                subtitle: Text(rule.description),
+                value: _smartShuffle.rules.contains(rule),
+                onChanged: _smartShuffle.enabled
+                    ? (ticked) => change(
+                        SmartShuffle(
+                          enabled: true,
+                          rules: ticked == true
+                              ? {..._smartShuffle.rules, rule}
+                              : ({..._smartShuffle.rules}..remove(rule)),
+                        ),
+                      )
+                    : null,
+              ),
+          ],
+        );
+      },
     );
   }
 

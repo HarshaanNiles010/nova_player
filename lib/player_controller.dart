@@ -10,6 +10,7 @@ import 'listening_history.dart';
 import 'music_library.dart';
 import 'queue_mode.dart';
 import 'replay_gain.dart';
+import 'smart_shuffle.dart';
 import 'song.dart';
 
 class PlayerController extends ChangeNotifier {
@@ -124,6 +125,10 @@ class PlayerController extends ChangeNotifier {
   /// shuffle stays off so queued songs can sit right after the current one.
   List<Song> _order = const [];
   bool shuffleEnabled = false;
+  SmartShuffle smartShuffle = const SmartShuffle();
+
+  /// Listening history for smart shuffle; only kept while it is on.
+  List<PlayRecord> _shuffleHistory = [];
 
   /// The playing song while songs move around it. Index changes from that
   /// are not mistaken for playback leaving the queue, and [currentSong]
@@ -572,7 +577,10 @@ class PlayerController extends ChangeNotifier {
       ..stop()
       ..reset();
     _listenSong = null;
-    if (record != null) unawaited(_history.append(record));
+    if (record != null) {
+      unawaited(_history.append(record));
+      if (smartShuffle.enabled) _shuffleHistory.add(record);
+    }
     unawaited(_history.savePending(null));
   }
 
@@ -644,6 +652,24 @@ class PlayerController extends ChangeNotifier {
   /// queued songs still play next.
   Future<void> toggleShuffle() async {
     shuffleEnabled = !shuffleEnabled;
+    await _reorder();
+  }
+
+  /// Applies [settings]; a list already shuffled is shuffled again to match.
+  Future<void> setSmartShuffle(SmartShuffle settings) async {
+    final needsHistory = settings.enabled && !smartShuffle.enabled;
+    smartShuffle = settings;
+    if (!settings.enabled) {
+      _shuffleHistory = [];
+    } else if (needsHistory) {
+      _shuffleHistory = [
+        ...await _history.load().catchError((Object _) => <PlayRecord>[]),
+      ];
+    }
+    if (shuffleEnabled) await _reorder();
+  }
+
+  Future<void> _reorder() async {
     final current = currentSong;
     final index = player.currentIndex;
     if (current == null || index == null) {
@@ -694,13 +720,21 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// [list] in random order, starting with [first].
-  static List<Song> _shuffled(List<Song> list, {required Song first}) => [
-    first,
-    ...([...list]
-      ..remove(first)
-      ..shuffle()),
-  ];
+  /// [list] in random or smart order, starting with [first].
+  List<Song> _shuffled(List<Song> list, {required Song first}) =>
+      smartShuffle.enabled
+      ? smartShuffled(
+          list,
+          first: first,
+          history: _shuffleHistory,
+          rules: smartShuffle.rules,
+        )
+      : [
+          first,
+          ...([...list]
+            ..remove(first)
+            ..shuffle()),
+        ];
 
   /// Songs queued in the last session; they play after the next song started.
   void restoreQueue(List<Song> queued) {

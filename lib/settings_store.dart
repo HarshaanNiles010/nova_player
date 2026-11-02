@@ -7,6 +7,7 @@ import 'group_by.dart';
 import 'queue_mode.dart';
 import 'replay_gain.dart';
 import 'search_bar_style.dart';
+import 'smart_shuffle.dart';
 import 'song.dart';
 import 'song_sort.dart';
 
@@ -22,6 +23,8 @@ class SettingsStore {
   static const _fontIdKey = 'font_id';
   static const _groupByKey = 'group_by';
   static const _levellingKey = 'levelling';
+  static const _smartShuffleKey = 'smart_shuffle';
+  static const _smartShuffleRulesKey = 'smart_shuffle_rules';
   static const _songSortKey = 'song_sort';
   static const _searchBarStyleKey = 'search_bar_style';
   static const _textScaleKey = 'text_scale';
@@ -229,6 +232,28 @@ class SettingsStore {
       _levellingKey,
       mode.name,
     );
+  }
+
+  Future<SmartShuffle> loadSmartShuffle() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rules = prefs.getStringList(_smartShuffleRulesKey);
+    return SmartShuffle(
+      enabled: prefs.getBool(_smartShuffleKey) ?? false,
+      rules: rules == null
+          ? SmartShuffleRule.values.toSet()
+          : {
+              for (final rule in SmartShuffleRule.values)
+                if (rules.contains(rule.name)) rule,
+            },
+    );
+  }
+
+  Future<void> saveSmartShuffle(SmartShuffle shuffle) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_smartShuffleKey, shuffle.enabled);
+    await prefs.setStringList(_smartShuffleRulesKey, [
+      for (final rule in shuffle.rules) rule.name,
+    ]);
   }
 
   Future<GroupBy> loadGroupBy() async {

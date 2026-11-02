@@ -119,38 +119,10 @@ List<Song> genreMix(
   DateTime? now,
   int limit = smartPlaylistSize,
 }) {
-  const halfLifeDays = 30.0;
-  const priorStrength = 4.0;
   const maxPerArtist = 4; // keeps one prolific artist from filling the mix
-  final today = now ?? DateTime.now();
-  final songLikes = <String, double>{}, songSkips = <String, double>{};
-  final artistLikes = <String, double>{}, artistSkips = <String, double>{};
-  for (final r in history) {
-    final ageDays = today.difference(r.start).inHours / 24;
-    final weight = math.pow(0.5, ageDays / halfLifeDays).toDouble();
-    final (songs, artists) = r.countsAsPlay
-        ? (songLikes, artistLikes)
-        : (songSkips, artistSkips);
-    songs[r.songKey] = (songs[r.songKey] ?? 0) + weight;
-    artists[r.artist] = (artists[r.artist] ?? 0) + weight;
-  }
-
-  final scored = [
-    for (final song in candidates)
-      (
-        song,
-        () {
-          final likes = artistLikes[song.artist] ?? 0;
-          final artistRate =
-              (likes + 1) / (likes + (artistSkips[song.artist] ?? 0) + 2);
-          return sampleBeta(
-            priorStrength * artistRate + (songLikes[song.key] ?? 0),
-            priorStrength * (1 - artistRate) + (songSkips[song.key] ?? 0),
-            random,
-          );
-        }(),
-      ),
-  ]..sort((a, b) => b.$2.compareTo(a.$2));
+  final like = likeSampler(history, random, now: now);
+  final scored = [for (final song in candidates) (song, like(song))]
+    ..sort((a, b) => b.$2.compareTo(a.$2));
 
   // Spread artists first, then fill up when the genre has few artists.
   final perArtist = <String, int>{};
@@ -166,6 +138,38 @@ List<Song> genreMix(
       if (!inSpread.contains(song)) song,
   ];
   return [...spread, ...rest].take(limit).toList();
+}
+
+/// Draws how likely a song is to be listened through, as in [genreMix].
+double Function(Song song) likeSampler(
+  List<PlayRecord> history,
+  math.Random random, {
+  DateTime? now,
+}) {
+  const halfLifeDays = 30.0;
+  const priorStrength = 4.0;
+  final today = now ?? DateTime.now();
+  final songLikes = <String, double>{}, songSkips = <String, double>{};
+  final artistLikes = <String, double>{}, artistSkips = <String, double>{};
+  for (final r in history) {
+    final ageDays = today.difference(r.start).inHours / 24;
+    final weight = math.pow(0.5, ageDays / halfLifeDays).toDouble();
+    final (songs, artists) = r.countsAsPlay
+        ? (songLikes, artistLikes)
+        : (songSkips, artistSkips);
+    songs[r.songKey] = (songs[r.songKey] ?? 0) + weight;
+    artists[r.artist] = (artists[r.artist] ?? 0) + weight;
+  }
+  return (song) {
+    final likes = artistLikes[song.artist] ?? 0;
+    final artistRate =
+        (likes + 1) / (likes + (artistSkips[song.artist] ?? 0) + 2);
+    return sampleBeta(
+      priorStrength * artistRate + (songLikes[song.key] ?? 0),
+      priorStrength * (1 - artistRate) + (songSkips[song.key] ?? 0),
+      random,
+    );
+  };
 }
 
 /// A draw from Beta(a, b), as X / (X + Y) with X ~ Gamma(a), Y ~ Gamma(b).
