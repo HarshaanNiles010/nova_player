@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io' show HttpException;
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
@@ -1654,6 +1656,70 @@ class _LyricsPanelState extends State<_LyricsPanel> {
     SettingsStore().saveLyricsOffset(widget.song, _offset);
   }
 
+  /// Latin letters under each line, while they are shown.
+  List<String>? _latin;
+  bool _romanizing = false;
+
+  /// Lines ticked for a shared card; null when not picking.
+  Set<int>? _picked;
+
+  Future<void> _romanize(List<LyricLine> lines) async {
+    if (_latin != null) {
+      setState(() => _latin = null);
+      return;
+    }
+    final song = widget.song;
+    final texts = [for (final line in lines) line.text];
+    setState(() => _romanizing = true);
+    List<String>? latin;
+    String? message;
+    try {
+      latin = await MusicLibrary().romanize(texts);
+      if (latin == null) {
+        message = 'Showing Latin letters needs Android 10 or newer.';
+      } else if (listEquals(latin, texts)) {
+        latin = null;
+        message = 'These lyrics are already in Latin letters.';
+      }
+    } catch (_) {
+      message = 'Could not convert these lyrics.';
+    }
+    if (!mounted) return;
+    setState(() {
+      _romanizing = false;
+      if (widget.song.id == song.id) _latin = latin;
+    });
+    if (message != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  void _pickLine(int index) {
+    final picked = _picked!;
+    final fits = togglePickedLine(picked, index);
+    setState(() {});
+    if (!fits) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('A card fits $maxPickedLines lines.')),
+        );
+    }
+  }
+
+  Future<void> _showCard(List<LyricLine> lines) async {
+    final picked = _picked!.toList()..sort();
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _LyricsCardDialog(
+        song: widget.song,
+        lines: [for (final i in picked) lines[i].text],
+      ),
+    );
+    if (mounted) setState(() => _picked = null);
+  }
+
   /// English under each line, while the translation is shown.
   List<String>? _english;
   bool _translating = false;
@@ -1746,6 +1812,8 @@ class _LyricsPanelState extends State<_LyricsPanel> {
   void _load() {
     _active = -1;
     _english = null;
+    _latin = null;
+    _picked = null;
     late final Future<List<LyricLine>> lines;
     lines =
         (
@@ -1866,29 +1934,78 @@ class _LyricsPanelState extends State<_LyricsPanel> {
                         icon: const Icon(Icons.add_rounded, size: 18),
                       ),
                     ],
-                    TextButton.icon(
-                      onPressed: _translating ? null : () => _translate(lines),
-                      icon: _translating
-                          ? const SizedBox.square(
-                              dimension: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.translate_rounded, size: 18),
-                      label: Text(
-                        _translating
-                            ? 'Translating...'
-                            : _english == null
-                            ? 'Translate'
-                            : 'Original only',
-                      ),
-                    ),
                   ],
                 ),
+                if (_picked case final picked?)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Tap up to $maxPickedLines lines',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => setState(() => _picked = null),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: picked.isEmpty
+                            ? null
+                            : () => _showCard(lines),
+                        child: const Text('Next'),
+                      ),
+                    ],
+                  )
+                else
+                  Wrap(
+                    children: [
+                      TextButton.icon(
+                        onPressed: _translating
+                            ? null
+                            : () => _translate(lines),
+                        icon: _translating
+                            ? const SizedBox.square(
+                                dimension: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.translate_rounded, size: 18),
+                        label: Text(
+                          _translating
+                              ? 'Translating...'
+                              : _english == null
+                              ? 'Translate'
+                              : 'Original only',
+                        ),
+                      ),
+                      if (Theme.of(context).platform ==
+                          TargetPlatform.android) ...[
+                        TextButton.icon(
+                          onPressed: _romanizing
+                              ? null
+                              : () => _romanize(lines),
+                          icon: const Icon(Icons.abc_rounded, size: 18),
+                          label: Text(
+                            _latin == null ? 'Latin letters' : 'Hide letters',
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => setState(() => _picked = {}),
+                          icon: const Icon(Icons.ios_share_rounded, size: 18),
+                          label: const Text('Share'),
+                        ),
+                      ],
+                    ],
+                  ),
                 const SizedBox(height: 16),
                 for (var i = 0; i < lines.length; i++)
                   InkWell(
                     key: _keys[i],
-                    onTap: lines[i].time == null
+                    onTap: _picked != null
+                        ? () => _pickLine(i)
+                        : lines[i].time == null
                         ? null
                         : () => widget.controller.player.seek(
                             Duration(
@@ -1898,8 +2015,13 @@ class _LyricsPanelState extends State<_LyricsPanel> {
                               ),
                             ),
                           ),
-                    child: Padding(
+                    child: Container(
+                      // Short lines are easy to miss when picking by text width.
+                      width: _picked == null ? null : double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 8),
+                      color: _picked?.contains(i) ?? false
+                          ? Colors.white24
+                          : null,
                       child: AnimatedDefaultTextStyle(
                         duration: const Duration(milliseconds: 250),
                         style: TextStyle(
@@ -1919,6 +2041,15 @@ class _LyricsPanelState extends State<_LyricsPanel> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(lines[i].text.isEmpty ? '♪' : lines[i].text),
+                            if (_latin?[i] case final latin?
+                                when latin != lines[i].text)
+                              Text(
+                                latin,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ),
                             if (_english?[i] case final english?
                                 when english.isNotEmpty)
                               Text(
@@ -1941,6 +2072,126 @@ class _LyricsPanelState extends State<_LyricsPanel> {
           },
         );
       },
+    );
+  }
+}
+
+/// Preview of a shareable card with the picked lyrics.
+class _LyricsCardDialog extends StatefulWidget {
+  const _LyricsCardDialog({required this.song, required this.lines});
+
+  final Song song;
+  final List<String> lines;
+
+  @override
+  State<_LyricsCardDialog> createState() => _LyricsCardDialogState();
+}
+
+class _LyricsCardDialogState extends State<_LyricsCardDialog> {
+  final _cardKey = GlobalKey();
+  bool _sharing = false;
+
+  Future<void> _share() async {
+    setState(() => _sharing = true);
+    try {
+      final card =
+          _cardKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      final image = await card.toImage(pixelRatio: 3);
+      final png = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      await MusicLibrary().shareImage(png!.buffer.asUint8List());
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _sharing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not share the card.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final song = widget.song;
+    return Dialog(
+      insetPadding: const EdgeInsets.all(20),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RepaintBoundary(
+              key: _cardKey,
+              child: ColoredBox(
+                color: const Color(0xFF0D0D0D),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final line in widget.lines)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Text(
+                            line.isEmpty ? '♪' : line,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              height: 1.35,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          _DeviceArtwork(song: song, size: 48),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  song.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                                Text(
+                                  song.artist,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            OverflowBar(
+              alignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton.icon(
+                  onPressed: _sharing ? null : _share,
+                  icon: const Icon(Icons.ios_share_rounded, size: 18),
+                  label: const Text('Share'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
