@@ -59,7 +59,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 **Also**
 - Back up playlists, smart playlists, favourites, settings and listening stats to one file, and restore them on a new phone or after a reinstall.
 - A duplicate finder in Settings: the same song in several files (title, artist and length match, ignoring tags like "(Remastered)"), best copy first. Hide the extra copies from the library without deleting anything.
-- Listening stats.
+- Listening stats, with a year in review: your top song, artist, album and genre of any year as swipeable slides, ending in a card you can share (the ✨ button on Your Stats).
 - Home-screen widgets in two sizes.
 
 ## Download
@@ -88,7 +88,7 @@ iPhone apps cannot read the whole phone, so Nova on iOS plays:
 - audio files you copy into the app (Finder → your iPhone → Files → Nova Player, or the Files app);
 - folders you pick in Settings → Music folders (On My iPhone, iCloud Drive or a USB drive). iCloud songs must be downloaded to the phone first.
 
-The Apple Music library is not used. Ogg and Opus files are skipped, since iOS cannot play them. Widgets, the equalizer, the lyrics folder picker, downloaded covers and rescanning are Android only; lyrics come from tags or a `.lrc` file next to the song. Restoring a backup closes the app; open it again to load the restored settings.
+The Apple Music library is not used. Ogg and Opus files are skipped, since iOS cannot play them. Widgets, the equalizer, volume levelling, Latin letters and sharing cards, the lyrics folder picker, downloaded covers and rescanning are Android only; lyrics come from tags or a `.lrc` file next to the song. Restoring a backup closes the app; open it again to load the restored settings.
 
 To keep playing and queueing fast, the iPhone player loads 40 songs around the one playing and adds more as it goes. So "Up next" shows about the next 40 songs, and going back with previous or repeat-all reaches at most 40 songs before where you started playing.
 
