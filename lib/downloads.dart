@@ -114,6 +114,119 @@ Future<void> downloadFont(String name) async {
   }
 }
 
+/// Fonts from other foundries, listed in fonts/catalog.json in the repo.
+final fontCatalogUrl = Uri.parse(
+  'https://raw.githubusercontent.com/HarshaanNiles010/nova_player/main/fonts/catalog.json',
+);
+
+/// Sites a catalog font may be downloaded from; anything else is skipped.
+const fontHosts = {'typographic.systems'};
+
+/// A font in the catalog: a zip on its foundry's site and the regular and
+/// bold .ttf files inside it.
+class CatalogFont {
+  const CatalogFont({
+    required this.name,
+    required this.by,
+    required this.license,
+    required this.zip,
+    required this.regular,
+    required this.bold,
+  });
+
+  final String name;
+  final String by;
+  final String license;
+  final Uri zip;
+  final String regular;
+  final String bold;
+}
+
+Future<List<CatalogFont>> fetchFontCatalog() async =>
+    parseFontCatalog(utf8.decode(await _get(fontCatalogUrl)));
+
+/// Skips entries that are malformed or point outside [fontHosts].
+List<CatalogFont> parseFontCatalog(String json) => [
+  for (final item in jsonDecode(json) as List<dynamic>) ?_tryCatalogFont(item),
+];
+
+CatalogFont? _tryCatalogFont(Object? item) {
+  try {
+    final map = item as Map<String, dynamic>;
+    final zip = Uri.parse(map['zip'] as String);
+    final regular = map['regular'] as String;
+    final bold = map['bold'] as String;
+    if (zip.scheme != 'https' ||
+        !fontHosts.contains(zip.host) ||
+        !regular.endsWith('.ttf') ||
+        !bold.endsWith('.ttf')) {
+      return null;
+    }
+    return CatalogFont(
+      name: map['name'] as String,
+      by: map['by'] as String,
+      license: map['license'] as String,
+      zip: zip,
+      regular: regular,
+      bold: bold,
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Downloads a catalog font's zip and saves its regular and bold files under
+/// [CatalogFont.name], like a Google font. Throws when offline or when the
+/// zip lacks either file.
+Future<void> downloadCatalogFont(CatalogFont font) async {
+  final files = readZipEntries(await _get(font.zip), {font.regular, font.bold});
+  final regular = files[font.regular];
+  final bold = files[font.bold];
+  if (regular == null || bold == null) {
+    throw FormatException('${font.zip} has no ${font.regular} or ${font.bold}');
+  }
+  final dir = await _fontDir();
+  await File('${dir.path}/${_stem(font.name)}-400.ttf').writeAsBytes(regular);
+  await File('${dir.path}/${_stem(font.name)}-700.ttf').writeAsBytes(bold);
+}
+
+/// The [wanted] files of a zip archive, by their path inside it. Supports
+/// stored and deflated entries, which is what zip tools write.
+Map<String, Uint8List> readZipEntries(Uint8List zip, Set<String> wanted) {
+  final data = ByteData.sublistView(zip);
+  int u16(int at) => data.getUint16(at, Endian.little);
+  int u32(int at) => data.getUint32(at, Endian.little);
+  // The end-of-directory record is last, after a comment of up to 64 KB.
+  var end = -1;
+  for (var i = zip.length - 22; i >= 0 && i >= zip.length - 22 - 0xFFFF; i--) {
+    if (u32(i) == 0x06054b50) {
+      end = i;
+      break;
+    }
+  }
+  if (end < 0) throw const FormatException('Not a zip file');
+  final out = <String, Uint8List>{};
+  var at = u32(end + 16);
+  for (var n = u16(end + 10); n > 0; n--) {
+    if (u32(at) != 0x02014b50) throw const FormatException('Bad zip directory');
+    final method = u16(at + 10);
+    final size = u32(at + 20);
+    final nameLength = u16(at + 28);
+    final local = u32(at + 42);
+    final name = utf8.decode(zip.sublist(at + 46, at + 46 + nameLength));
+    at += 46 + nameLength + u16(at + 30) + u16(at + 32);
+    if (!wanted.contains(name)) continue;
+    final start = local + 30 + u16(local + 26) + u16(local + 28);
+    final raw = Uint8List.sublistView(zip, start, start + size);
+    out[name] = switch (method) {
+      0 => Uint8List.fromList(raw),
+      8 => Uint8List.fromList(ZLibDecoder(raw: true).convert(raw)),
+      _ => throw FormatException('Unsupported zip compression $method'),
+    };
+  }
+  return out;
+}
+
 /// Registers a downloaded font with Flutter; false when its files are gone.
 Future<bool> loadDownloadedFont(AppFont font) async {
   final dir = await _fontDir();

@@ -6292,7 +6292,88 @@ class _SettingsPageState extends State<SettingsPage> {
           icon: const Icon(Icons.download_rounded),
           label: const Text('Download a font'),
         ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => _catalogFonts(context),
+          icon: const Icon(Icons.font_download_outlined),
+          label: const Text('Fonts from Typographic Systems'),
+        ),
       ],
+    );
+  }
+
+  /// Fonts from fonts/catalog.json, fetched when the sheet opens.
+  Future<void> _catalogFonts(BuildContext context) {
+    final themes = widget.themeController;
+    final catalog = fetchFontCatalog();
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: FutureBuilder<List<CatalogFont>>(
+          future: catalog,
+          builder: (sheet, snapshot) {
+            if (snapshot.hasError) {
+              return const ListTile(
+                leading: Icon(Icons.cloud_off_rounded),
+                title: Text('Could not load the list. Check your connection.'),
+              );
+            }
+            final fonts = snapshot.data;
+            if (fonts == null) {
+              return const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            return ListView(
+              shrinkWrap: true,
+              children: [
+                for (final font in fonts)
+                  ListTile(
+                    leading: const Icon(Icons.text_fields_rounded),
+                    title: Text(font.name),
+                    subtitle: Text('${font.by} · ${font.license}'),
+                    trailing: themes.allFonts.any((f) => f.name == font.name)
+                        ? const Icon(Icons.check_rounded)
+                        : const Icon(Icons.download_rounded),
+                    onTap: () async {
+                      Navigator.pop(sheet);
+                      final messenger = ScaffoldMessenger.of(context)
+                        ..showSnackBar(
+                          SnackBar(
+                            content: Text('Downloading ${font.name}...'),
+                          ),
+                        );
+                      try {
+                        await themes.installFont(
+                          font.name,
+                          download: () => downloadCatalogFont(font),
+                        );
+                        messenger
+                          ..hideCurrentSnackBar()
+                          ..showSnackBar(
+                            SnackBar(content: Text('Installed ${font.name}')),
+                          );
+                      } catch (_) {
+                        messenger
+                          ..hideCurrentSnackBar()
+                          ..showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Could not download ${font.name}. '
+                                'Check your connection.',
+                              ),
+                            ),
+                          );
+                      }
+                    },
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 

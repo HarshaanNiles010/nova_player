@@ -347,6 +347,17 @@ const appThemes = [
     primary: Color(0xFF6699CC),
     secondary: Color(0xFFC594C5),
   ),
+  // Black and off-white with a red accent, like the Obel Mono specimen page.
+  AppThemePreset(
+    id: 'obel',
+    name: 'Obel',
+    brightness: Brightness.dark,
+    background: Color(0xFF000000),
+    surface: Color(0xFF0E0E0E),
+    foreground: Color(0xFFEDEDED),
+    primary: Color(0xFFF2382C),
+    secondary: Color(0xFF8E8E93),
+  ),
 ];
 
 class AppFont {
@@ -481,8 +492,12 @@ class ThemeController extends ChangeNotifier {
   ]);
 
   /// Downloads a Google Fonts family and selects it. Throws on failure.
-  Future<void> installFont(String name) async {
-    await downloadFont(name);
+  /// [download] fetches the files; Google Fonts unless given.
+  Future<void> installFont(
+    String name, {
+    Future<void> Function()? download,
+  }) async {
+    await (download ?? () => downloadFont(name))();
     final font = AppFont.downloaded(name);
     if (await _tryLoadFont(font) == null) {
       throw StateError('Could not load $name');
