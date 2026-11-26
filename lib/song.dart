@@ -116,3 +116,54 @@ String indexLetterOf(String text) {
   final char = match?.group(0)?.toUpperCase() ?? '#';
   return RegExp(r'\p{L}', unicode: true).hasMatch(char) ? char : '#';
 }
+
+const _accents = {
+  'à': 'a',
+  'á': 'a',
+  'â': 'a',
+  'ã': 'a',
+  'ä': 'a',
+  'å': 'a',
+  'æ': 'ae',
+  'ç': 'c',
+  'è': 'e',
+  'é': 'e',
+  'ê': 'e',
+  'ë': 'e',
+  'ì': 'i',
+  'í': 'i',
+  'î': 'i',
+  'ï': 'i',
+  'ñ': 'n',
+  'ò': 'o',
+  'ó': 'o',
+  'ô': 'o',
+  'õ': 'o',
+  'ö': 'o',
+  'ø': 'o',
+  'œ': 'oe',
+  'ù': 'u',
+  'ú': 'u',
+  'û': 'u',
+  'ü': 'u',
+  'ý': 'y',
+  'ÿ': 'y',
+  'ß': 'ss',
+  'ё': 'е',
+};
+
+/// Lower case without accents, so "Pensées" and "pensees" compare equal.
+// shortcut: common Latin accents and ё only; use full Unicode folding if
+// other scripts' marks need it.
+String foldForSearch(String text) =>
+    text.toLowerCase().split('').map((char) => _accents[char] ?? char).join();
+
+/// Whether every word of [query] appears somewhere in [song]'s title, artist
+/// or album, in any order, ignoring case and accents.
+bool searchMatches(Song song, String query) {
+  final haystack = foldForSearch('${song.title} ${song.artist} ${song.album}');
+  return foldForSearch(query)
+      .split(RegExp(r'\s+'))
+      .where((word) => word.isNotEmpty)
+      .every(haystack.contains);
+}

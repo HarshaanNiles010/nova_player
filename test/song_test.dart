@@ -210,4 +210,33 @@ void main() {
       '',
     ]);
   });
+
+  group('search', () {
+    final song = Song(
+      id: '1',
+      title: 'Teri Mitti',
+      artist: '*shels',
+      album: 'Septembre et ses dernières pensées',
+      duration: Duration.zero,
+      uri: Uri.parse('content://1'),
+      fileName: '1.flac',
+      mimeType: 'audio/flac',
+    );
+
+    test('ignores case', () {
+      expect(searchMatches(song, 'SHELS'), isTrue);
+      expect(searchMatches(song, 'teri MITTI'), isTrue);
+    });
+
+    test('matches words in any order and across fields', () {
+      expect(searchMatches(song, 'shels teri'), isTrue);
+      expect(searchMatches(song, '  mitti   septembre '), isTrue);
+      expect(searchMatches(song, 'teri nope'), isFalse);
+    });
+
+    test('ignores accents', () {
+      expect(searchMatches(song, 'pensees dernieres'), isTrue);
+      expect(searchMatches(song, 'PENSÉES'), isTrue);
+    });
+  });
 }

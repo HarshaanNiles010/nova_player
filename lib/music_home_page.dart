@@ -179,14 +179,10 @@ class _MusicHomePageState extends State<MusicHomePage>
   }
 
   List<Song> get _visibleSongs {
-    final query = _query.trim().toLowerCase();
+    final query = _query.trim();
     if (query.isEmpty) return _sortedSongs;
     return _sortedSongs
-        .where(
-          (song) => '${song.title} ${song.artist} ${song.album}'
-              .toLowerCase()
-              .contains(query),
-        )
+        .where((song) => searchMatches(song, query))
         .toList(growable: false);
   }
 
@@ -493,14 +489,23 @@ class _MusicHomePageState extends State<MusicHomePage>
   Widget _searchField(InputDecoration decoration) => TextField(
     controller: _searchController,
     onChanged: _search,
+    textInputAction: TextInputAction.search,
+    // Centred, so the text stays put when the clear button appears.
+    textAlignVertical: TextAlignVertical.center,
     // Focus left here returns after any page or sheet closes, scrolling the
     // list to the top.
     onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
     decoration: decoration.copyWith(
+      // A fixed slot, so showing the clear button doesn't resize the field.
+      suffixIconConstraints: const BoxConstraints.tightFor(
+        width: 44,
+        height: 44,
+      ),
       suffixIcon: _query.isEmpty
           ? null
           : IconButton(
               tooltip: 'Clear search',
+              iconSize: 20,
               onPressed: () {
                 _searchController.clear();
                 _search('');
@@ -641,12 +646,12 @@ class _MusicHomePageState extends State<MusicHomePage>
           Expanded(
             child: _searchField(
               const InputDecoration(
-                hintText: 'Search',
+                hintText: 'Search songs, artists, albums',
                 filled: false,
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
+                contentPadding: EdgeInsets.symmetric(horizontal: 4),
                 isDense: true,
               ),
             ),
