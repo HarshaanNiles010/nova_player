@@ -78,6 +78,11 @@ flutter:
         - asset: assets/fonts/space-grotesk-400.ttf
         - asset: assets/fonts/space-grotesk-700.ttf
           weight: 700
+    - family: ObelMono
+      fonts:
+        - asset: assets/fonts/obel-mono-400.ttf
+        - asset: assets/fonts/obel-mono-700.ttf
+          weight: 700
     - family: IBMPlexSans
       fonts:
         - asset: assets/fonts/ibm-plex-sans-400.ttf

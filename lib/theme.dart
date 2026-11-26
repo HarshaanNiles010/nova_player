@@ -375,6 +375,7 @@ const appFonts = [
     name: 'JetBrains Mono',
     family: 'JetBrainsMonoNF',
   ),
+  AppFont(id: 'obel-mono', name: 'Obel Mono', family: 'ObelMono'),
 ];
 
 const textScales = {
