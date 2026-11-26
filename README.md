@@ -8,7 +8,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 
 **Library**
 - Finds every song Android has indexed, plus extra folders you add (for example folders with a `.nomedia` file).
-- Search by title, artist or album, group by artist, artist then album, album, genre, year or format, sort by title, artist, album, recently added, longest or most played, and fast-scroll long lists. Settings → Look & feel → Search bar keeps search within reach while you scroll: a banner fixed at the top, a compact floating bar, or scrolling away with the list. The list keeps your place when you come back from another page; if the song changed on Now Playing, it moves to the new one.
+- Search by title, artist or album (words in any order, ignoring case and accents, so "gulu shels" finds "Return To Gulu" by *shels), group by artist, artist then album, album, genre, year or format, sort by title, artist, album, recently added, longest or most played, and fast-scroll long lists. Settings → Look & feel → Search bar keeps search within reach while you scroll: a banner fixed at the top, a compact floating bar, or scrolling away with the list. The list keeps your place when you come back from another page; if the song changed on Now Playing, it moves to the new one.
 - Browse by folder.
 - Swipe a song left or right to add it to the queue.
 - The song that is playing stands out in every list: a tinted row, a bold title and a playing mark on its cover (or before its title in the text-only list).
@@ -59,7 +59,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 **Look and feel**
 - Built-in themes, including ones inspired by Outer Wilds, Rain World, Hollow Knight and Celeste, each with a light, dark or system mode.
 - More themes can be downloaded in the app from [`themes/catalog.json`](themes/catalog.json).
-- Bundled fonts, plus any [Google Fonts](https://fonts.google.com) family downloaded in the app.
+- Bundled fonts (Inter, IBM Plex Sans, Space Grotesk, Lora, JetBrains Mono and [Obel Mono](https://typographic.systems/obel-mono), all under the SIL Open Font License), plus any [Google Fonts](https://fonts.google.com) family downloaded in the app.
 - Adjustable text size.
 - Settings → Look & feel changes how the player and library look. Pick a whole look (Classic, Glass, Poster, Turntable, Pure, Matching), then change any part of it:
   - player layout: classic, full-bleed cover, centered card, or a spinning vinyl record
