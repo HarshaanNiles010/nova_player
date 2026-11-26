@@ -62,6 +62,23 @@ List<Object> groupRows(List<Song> songs, GroupBy groupBy) {
   ];
 }
 
+/// [rows] with each run of consecutive songs cut into lists of up to
+/// [columns], one list per grid row; headings stay as they are.
+List<Object> gridRows(List<Object> rows, int columns) {
+  final out = <Object>[];
+  List<Song>? current;
+  for (final row in rows) {
+    if (row is Song) {
+      if (current == null || current.length == columns) out.add(current = []);
+      current.add(row);
+    } else {
+      current = null;
+      out.add(row);
+    }
+  }
+  return out;
+}
+
 /// An album's songs by disc and track number, so they play through in order
 /// (and gaplessly); songs without a number follow, by title.
 List<Song> inTrackOrder(List<Song> songs) {

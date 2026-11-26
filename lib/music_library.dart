@@ -13,6 +13,40 @@ class MusicLibrary {
   static const _thumbnailCacheLimit = 400;
   static final _thumbnails = <String, Future<Uint8List?>>{};
 
+  /// Asks for the permission the visualizer needs; true once granted.
+  static Future<bool> requestAudioCapture() async =>
+      await _channel.invokeMethod<bool>('requestAudioCapture') ?? false;
+
+  /// The player output's loudness in bands, low to high, each 0 to 1.
+  static Stream<List<double>> visualizer(int audioSession) =>
+      const EventChannel('com.novaplayer/visualizer')
+          .receiveBroadcastStream(audioSession)
+          .map((levels) => (levels as List<Object?>).cast<double>());
+
+  /// The phone's media volume, 0 to 1.
+  static Future<double> mediaVolume() async =>
+      await _channel.invokeMethod<double>('getMediaVolume') ?? 1;
+
+  static Future<void> setMediaVolume(double volume) =>
+      _channel.invokeMethod<void>('setMediaVolume', {'volume': volume});
+
+  static final _waveforms = <String, Future<List<double>?>>{};
+
+  /// [song]'s real loudness bars, decoded once and cached on the device;
+  /// null when the file can't be decoded.
+  static Future<List<double>?> waveform(Song song, int bins) =>
+      _waveforms.putIfAbsent(
+        '${song.id}-$bins',
+        () => _channel
+            .invokeListMethod<double>('getWaveform', {
+              'uri': song.uri.toString(),
+              // Size in the key, so a replaced file is decoded again.
+              'key': '${song.id}-${song.size}',
+              'bins': bins,
+            })
+            .catchError((Object _) => null),
+      );
+
   /// Bumped when a cover is saved or removed, so artwork on screen reloads.
   static final artworkChanged = ValueNotifier(0);
 

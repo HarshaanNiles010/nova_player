@@ -72,6 +72,36 @@ List<Song> neverPlayed(
       .toList();
 }
 
+/// Songs you played at least [minPlays] times, but not in the last [quiet]:
+/// old favourites, most played first.
+List<Song> rediscover(
+  List<PlayRecord> history,
+  List<Song> library,
+  DateTime now, {
+  Duration quiet = const Duration(days: 30),
+  int minPlays = 3,
+}) {
+  final cutoff = now.subtract(quiet);
+  final earlier = <String, int>{};
+  final lately = <String>{};
+  for (final r in history.where((r) => r.countsAsPlay)) {
+    if (r.start.isBefore(cutoff)) {
+      earlier[r.songKey] = (earlier[r.songKey] ?? 0) + 1;
+    } else {
+      lately.add(r.songKey);
+    }
+  }
+  final byKey = {for (final song in library) song.key: song};
+  final ranked =
+      earlier.entries
+          .where((e) => e.value >= minPlays && !lately.contains(e.key))
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+  return [for (final e in ranked) ?byKey[e.key]]
+      .take(smartPlaylistSize)
+      .toList();
+}
+
 /// Genre name -> songs. "Post-Rock" and "post rock" are one genre, and
 /// untagged songs take the genres of their artist's tagged songs.
 Map<String, List<Song>> songsByGenre(List<Song> library) {

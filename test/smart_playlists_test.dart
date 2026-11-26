@@ -131,4 +131,20 @@ void main() {
     expect(played(HistoryPeriod.all), ['new', 'old']);
     expect(played(HistoryPeriod.today), isEmpty);
   });
+
+  test('rediscover: often played before, not lately; most played first', () {
+    final library = [song('fav'), song('top'), song('recent'), song('once')];
+    final history = [
+      for (var i = 0; i < 3; i++) rec('fav', 60, day: 1),
+      for (var i = 0; i < 5; i++) rec('top', 60, day: 2),
+      for (var i = 0; i < 4; i++) rec('recent', 60, day: 1),
+      rec('recent', 60, day: 30),
+      rec('once', 60, day: 1),
+      rec('fav', 5, day: 30), // too short to count, so fav stays forgotten
+    ];
+    expect(
+      rediscover(history, library, DateTime(2026, 11, 5)).map((s) => s.id),
+      ['top', 'fav'],
+    );
+  });
 }

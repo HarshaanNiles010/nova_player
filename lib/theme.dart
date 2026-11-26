@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import 'downloads.dart';
+import 'look.dart';
 import 'settings_store.dart';
 
 class AppThemePreset {
@@ -414,6 +415,7 @@ class ThemeController extends ChangeNotifier {
     final savedFont = await _settings.loadFontId();
     font = allFonts.where((item) => item.id == savedFont).firstOrNull ?? font;
     textScale = await _settings.loadTextScale() ?? textScale;
+    lookOptions.value = await _settings.loadLook();
     notifyListeners();
   }
 
@@ -433,6 +435,12 @@ class ThemeController extends ChangeNotifier {
     textScale = value;
     notifyListeners();
     await _settings.saveTextScale(value);
+  }
+
+  Future<void> selectLook(LookOptions value) async {
+    lookOptions.value = value;
+    notifyListeners();
+    await _settings.saveLook(value);
   }
 
   Future<void> selectMode(ThemeMode value) async {

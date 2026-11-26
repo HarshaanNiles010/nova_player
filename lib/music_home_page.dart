@@ -28,6 +28,7 @@ import 'replay_gain.dart';
 import 'rule_playlist_editor.dart';
 import 'rule_playlists.dart';
 import 'search_bar_style.dart';
+import 'look.dart';
 import 'settings_store.dart';
 import 'smart_playlists.dart';
 import 'smart_shuffle.dart';
@@ -65,7 +66,7 @@ class _MusicHomePageState extends State<MusicHomePage>
   String? _error;
   String _query = '';
   GroupBy _groupBy = GroupBy.none;
-  SearchBarStyle _searchBarStyle = SearchBarStyle.banner;
+  SearchBarStyle get _searchBarStyle => lookOptions.value.searchBar;
   SongSort _sort = SongSort.title;
   LevellingMode _levelling = LevellingMode.off;
 
@@ -80,6 +81,14 @@ class _MusicHomePageState extends State<MusicHomePage>
 
   /// Space the floating bar covers at the top of the list.
   static const _floatingInset = 72.0;
+
+  /// How much of the list's bottom the floating mini player covers.
+  static const _floatingMiniInset = 100.0;
+
+  bool get _floatingMini =>
+      lookOptions.value.miniPlayer == MiniPlayerStyle.floating &&
+      _player.currentSong != null &&
+      !selecting;
 
   // A banner would leave the list no room on a sideways phone with a keyboard.
   SearchBarStyle get _barStyle =>
@@ -96,7 +105,8 @@ class _MusicHomePageState extends State<MusicHomePage>
   List<Song> _playOrder = const [];
 
   @override
-  List<Song> get selectableSongs => _rows.whereType<Song>().toList();
+  List<Song> get selectableSongs =>
+      groupRows(_visibleSongs, _groupBy).whereType<Song>().toList();
 
   @override
   PlayerController get selectionPlayer => _player;
@@ -108,7 +118,14 @@ class _MusicHomePageState extends State<MusicHomePage>
         : groupRows(_sortedSongs, _groupBy).whereType<Song>().toList();
   }
 
-  List<Object> get _rows => groupRows(_visibleSongs, _groupBy);
+  List<Object> get _rows {
+    final rows = groupRows(_visibleSongs, _groupBy);
+    return lookOptions.value.listLayout == ListLayout.grid
+        ? gridRows(rows, _gridColumns)
+        : rows;
+  }
+
+  static const _gridColumns = 2;
 
   Future<void> _selectGroupBy(GroupBy group) async {
     setState(() {
@@ -177,6 +194,10 @@ class _MusicHomePageState extends State<MusicHomePage>
   void initState() {
     super.initState();
     MusicLibrary.libraryChanged.addListener(_reloadSongs);
+    lookOptions.addListener(_lookChanged);
+    // The floating mini player and back-to-top button move when a song
+    // first loads or the player empties.
+    _player.addListener(_songPresenceChanged);
     _initialize();
   }
 
@@ -195,10 +216,15 @@ class _MusicHomePageState extends State<MusicHomePage>
     await ListeningHistory.instance.recoverPending();
     await _player.setQueueMode(await _settings.loadQueueMode());
     _levelling = await _settings.loadLevelling();
+    final playback = await _settings.loadPlayback();
+    await _player.setPlayback(
+      speed: playback.speed,
+      pitch: playback.pitch,
+      skipSilence: playback.skipSilence,
+    );
     await _player.setLevelling(_levelling);
     await _player.setSmartShuffle(await _settings.loadSmartShuffle());
     _groupBy = await _settings.loadGroupBy();
-    _searchBarStyle = await _settings.loadSearchBarStyle();
     _sort = await _settings.loadSongSort();
     if (_sort == SongSort.mostPlayed) _plays = await _loadPlays();
     _hidden = await _settings.loadHidden();
@@ -374,11 +400,6 @@ class _MusicHomePageState extends State<MusicHomePage>
             await _settings.saveSmartShuffle(shuffle);
             await _player.setSmartShuffle(shuffle);
           },
-          initialSearchBarStyle: _searchBarStyle,
-          onSearchBarStyleChanged: (style) async {
-            setState(() => _searchBarStyle = style);
-            await _settings.saveSearchBarStyle(style);
-          },
           onReload: _loadLibrary,
           onFindDuplicates: _openDuplicates,
           equalizer: _player.equalizer,
@@ -386,6 +407,15 @@ class _MusicHomePageState extends State<MusicHomePage>
         ),
       ),
     );
+  }
+
+  void _lookChanged() => setState(() {});
+
+  bool _hadSong = false;
+
+  void _songPresenceChanged() {
+    final hasSong = _player.currentSong != null;
+    if (hasSong != _hadSong && mounted) setState(() => _hadSong = hasSong);
   }
 
   void _openLibraryPage(Widget page) {
@@ -418,7 +448,11 @@ class _MusicHomePageState extends State<MusicHomePage>
   void _revealCurrentSong() {
     final list = _listKey.currentContext?.findRenderObject();
     final id = _player.currentSong?.id;
-    final index = _rows.indexWhere((row) => row is Song && row.id == id);
+    final index = _rows.indexWhere(
+      (row) =>
+          row is Song && row.id == id ||
+          row is List<Song> && row.any((song) => song.id == id),
+    );
     if (list is! RenderSliverFixedExtentBoxAdaptor ||
         index < 0 ||
         !_scrollController.hasClients) {
@@ -429,8 +463,9 @@ class _MusicHomePageState extends State<MusicHomePage>
     final position = _scrollController.position;
     final viewport = position.viewportDimension;
     final covered = _barStyle == SearchBarStyle.floating ? _floatingInset : 0.0;
+    final coveredBelow = _floatingMini ? _floatingMiniInset : 0.0;
     if (top >= position.pixels + covered &&
-        top + rowHeight <= position.pixels + viewport) {
+        top + rowHeight <= position.pixels + viewport - coveredBelow) {
       return;
     }
     _scrollController.jumpTo(
@@ -441,6 +476,8 @@ class _MusicHomePageState extends State<MusicHomePage>
   @override
   void dispose() {
     MusicLibrary.libraryChanged.removeListener(_reloadSongs);
+    lookOptions.removeListener(_lookChanged);
+    _player.removeListener(_songPresenceChanged);
     _positionSaver?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
@@ -537,6 +574,7 @@ class _MusicHomePageState extends State<MusicHomePage>
         ),
       ),
     ),
+    if (lookOptions.value.has(LookExtra.libraryTabs)) _libraryTabs(),
     Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
@@ -555,6 +593,37 @@ class _MusicHomePageState extends State<MusicHomePage>
       ),
     ),
   ];
+
+  /// Shortcuts to the drawer's library pages, as a row of tabs.
+  Widget _libraryTabs() {
+    void open(Widget page) =>
+        Navigator.of(context)
+            .push(MaterialPageRoute<void>(builder: (_) => page));
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+        children: [
+          for (final (label, page) in <(String, Widget Function())>[
+            ('Albums', () => AlbumsPage(songs: _songs, player: _player)),
+            ('Artists', () => ArtistsPage(songs: _songs, player: _player)),
+            ('Folders', () => FoldersPage(songs: _songs, player: _player)),
+            ('Playlists', () => PlaylistsPage(player: _player)),
+            ('Smart', () => SmartPlaylistsPage(player: _player)),
+            ('Stats', () => StatsPage(player: _player, library: _songs)),
+          ])
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ActionChip(
+                label: Text(label),
+                onPressed: () => open(page()),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
   Widget _floatingBar() => Material(
     elevation: 4,
@@ -643,7 +712,9 @@ class _MusicHomePageState extends State<MusicHomePage>
                     labelAt: (fraction) {
                       final rows = _rows;
                       if (rows.isEmpty) return null;
-                      final row = rows[(fraction * (rows.length - 1)).round()];
+                      final picked =
+                          rows[(fraction * (rows.length - 1)).round()];
+                      final row = picked is List<Song> ? picked.first : picked;
                       return switch (row) {
                         final String group => group,
                         final AlbumHeading album => album.artist,
@@ -680,9 +751,24 @@ class _MusicHomePageState extends State<MusicHomePage>
                   // Left of the scroll bar so the two never overlap.
                   Positioned(
                     right: 56,
-                    bottom: 16,
+                    bottom: _floatingMini ? _floatingMiniInset : 16,
                     child: _BackToTopButton(controller: _scrollController),
                   ),
+                  if (_floatingMini)
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 12,
+                      // Rebuilds on play/pause and song changes, like the docked bar.
+                      child: AnimatedBuilder(
+                        animation: _player,
+                        builder: (context, _) => MiniPlayer(
+                          controller: _player,
+                          onTap: _openNowPlaying,
+                          floating: true,
+                        ),
+                      ),
+                    ),
                   // Stops short of the right edge to leave the scroll bar free.
                   if (style == SearchBarStyle.floating)
                     Positioned(
@@ -696,7 +782,7 @@ class _MusicHomePageState extends State<MusicHomePage>
             ),
             if (selecting)
               selectionBar()
-            else
+            else if (!_floatingMini)
               AnimatedBuilder(
                 animation: _player,
                 builder: (context, _) => _player.currentSong == null
@@ -776,12 +862,21 @@ class _MusicHomePageState extends State<MusicHomePage>
         // a plain SliverList lays out every row in between, which hung the app.
         sliver: SliverPrototypeExtentList.builder(
           key: _listKey,
-          prototypeItem: SongTile(
-            song: _visibleSongs.first,
-            active: false,
-            onTap: () {},
-            onQueue: () {},
-          ),
+          prototypeItem: lookOptions.value.listLayout == ListLayout.grid
+              ? _SongGridRow(
+                  songs: [_visibleSongs.first],
+                  columns: _gridColumns,
+                  activeId: null,
+                  selectedIds: null,
+                  onTap: (_) {},
+                  onLongPress: (_) {},
+                )
+              : SongTile(
+                  song: _visibleSongs.first,
+                  active: false,
+                  onTap: () {},
+                  onQueue: () {},
+                ),
           itemCount: rows.length,
           itemBuilder: (context, index) {
             final row = rows[index];
@@ -798,6 +893,20 @@ class _MusicHomePageState extends State<MusicHomePage>
                   title: row.album,
                   count: row.count,
                   album: true,
+                ),
+              );
+            }
+            if (row is List<Song>) {
+              return ListenableBuilder(
+                listenable: _player,
+                builder: (context, _) => _SongGridRow(
+                  songs: row,
+                  columns: _gridColumns,
+                  activeId: _player.currentSong?.id,
+                  selectedIds: selecting ? selectedIds : null,
+                  onTap: (song) =>
+                      selecting ? toggleSelected(song) : _play(song),
+                  onLongPress: toggleSelected,
                 ),
               );
             }
@@ -1112,41 +1221,50 @@ class SongTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    // Swipe left to queue; returning false snaps the tile back into place.
+    // Grid applies to the main list only; elsewhere its songs show as rows.
+    final layout = lookOptions.value.listLayout;
+    final small = layout == ListLayout.compact || layout == ListLayout.textOnly;
+    final artSize = layout == ListLayout.compact ? 36.0 : 44.0;
+    Widget swipeBackground(Alignment alignment) => ColoredBox(
+      color: colors.primary,
+      child: Align(
+        alignment: alignment,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.queue_music_rounded, color: colors.onPrimary),
+              const SizedBox(width: 8),
+              Text(
+                'Add to queue',
+                style: TextStyle(
+                  color: colors.onPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    // Swipe either way to queue; returning false snaps the tile back into place.
     return Dismissible(
       key: ValueKey('queue-swipe-${song.id}'),
       direction: selected == null
-          ? DismissDirection.endToStart
+          ? DismissDirection.horizontal
           : DismissDirection.none,
-      dismissThresholds: const {DismissDirection.endToStart: 0.25},
+      dismissThresholds: const {
+        DismissDirection.startToEnd: 0.25,
+        DismissDirection.endToStart: 0.25,
+      },
       confirmDismiss: (_) async {
         HapticFeedback.mediumImpact();
         onQueue();
         return false;
       },
-      background: ColoredBox(
-        color: colors.primary,
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 24),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Add to queue',
-                  style: TextStyle(
-                    color: colors.onPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(Icons.queue_music_rounded, color: colors.onPrimary),
-              ],
-            ),
-          ),
-        ),
-      ),
+      background: swipeBackground(Alignment.centerLeft),
+      secondaryBackground: swipeBackground(Alignment.centerRight),
       child: DecoratedBox(
         decoration: BoxDecoration(
           border: Border(
@@ -1160,23 +1278,34 @@ class SongTile extends StatelessWidget {
           onLongPress: onLongPress,
           selected: selected ?? false,
           selectedTileColor: colors.primary.withValues(alpha: 0.12),
-          minTileHeight: 72,
+          // The playing song stands out: tinted row, bold title, marked art.
+          tileColor: active ? colors.primary.withValues(alpha: 0.10) : null,
+          minTileHeight: small ? 56 : 72,
+          dense: small,
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           leading: selected == true
               ? SizedBox.square(
-                  dimension: 44,
+                  dimension: artSize,
                   child: Icon(
                     Icons.check_circle_rounded,
                     color: colors.primary,
                   ),
                 )
-              : NovaArtwork(song: song, size: 44),
+              : layout == ListLayout.textOnly
+              ? (active
+                    ? Icon(
+                        Icons.graphic_eq_rounded,
+                        color: colors.primary,
+                        semanticLabel: 'Now playing',
+                      )
+                    : null)
+              : NovaArtwork(song: song, size: artSize, playing: active),
           title: Text(
             song.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontWeight: FontWeight.w500,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
               color: active ? colors.primary : null,
             ),
           ),
@@ -1238,14 +1367,156 @@ class SongTile extends StatelessWidget {
   }
 }
 
+/// Artwork [child] cut to [shape]; square art keeps its thin outline.
+Widget _shaped(ArtShape shape, double size, ColorScheme colors, Widget child) {
+  final box = Container(
+    width: size,
+    height: size,
+    clipBehavior: Clip.antiAlias,
+    decoration: BoxDecoration(
+      color: colors.surfaceContainer,
+      border: shape == ArtShape.square
+          ? Border.all(color: colors.outlineVariant)
+          : null,
+    ),
+    child: child,
+  );
+  return shape == ArtShape.square
+      ? box
+      : ClipPath(clipper: ArtShapeClipper(shape), child: box);
+}
+
+/// One row of the main page's grid: album-art cards, [columns] across.
+class _SongGridRow extends StatelessWidget {
+  const _SongGridRow({
+    required this.songs,
+    required this.columns,
+    required this.activeId,
+    required this.selectedIds,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  final List<Song> songs;
+  final int columns;
+  final String? activeId;
+
+  /// Ticked songs; null when the list is not selecting.
+  final Set<String>? selectedIds;
+  final void Function(Song song) onTap;
+  final void Function(Song song) onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < columns; i++) ...[
+            if (i > 0) const SizedBox(width: 12),
+            Expanded(
+              child: i >= songs.length
+                  ? const SizedBox.shrink()
+                  : InkWell(
+                      onTap: () => onTap(songs[i]),
+                      onLongPress: () => onLongPress(songs[i]),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          LayoutBuilder(
+                            builder: (context, box) => Stack(
+                              children: [
+                                NovaArtwork(
+                                  song: songs[i],
+                                  size: box.maxWidth,
+                                  playing: songs[i].id == activeId,
+                                ),
+                                if (selectedIds?.contains(songs[i].id) ?? false)
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: Icon(
+                                      Icons.check_circle_rounded,
+                                      color: colors.primary,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            songs[i].title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w500,
+                              color: songs[i].id == activeId
+                                  ? colors.primary
+                                  : null,
+                            ),
+                          ),
+                          Text(
+                            songs[i].artist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class NovaArtwork extends StatelessWidget {
-  const NovaArtwork({super.key, required this.song, required this.size});
+  const NovaArtwork({
+    super.key,
+    required this.song,
+    required this.size,
+    this.playing = false,
+  });
 
   final Song song;
   final double size;
 
+  /// Marks the art as the song now playing, with a dimmed overlay and icon.
+  final bool playing;
+
   @override
   Widget build(BuildContext context) {
+    final art = _art(context);
+    if (!playing) return art;
+    return Stack(
+      children: [
+        art,
+        ClipPath(
+          clipper: ArtShapeClipper(lookOptions.value.artShape),
+          child: Container(
+            width: size,
+            height: size,
+            color: Colors.black54,
+            child: Icon(
+              Icons.graphic_eq_rounded,
+              color: Colors.white,
+              size: size * 0.5,
+              semanticLabel: 'Now playing',
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _art(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final pixels = (size * MediaQuery.devicePixelRatioOf(context)).round();
     return ExcludeSemantics(
@@ -1255,15 +1526,11 @@ class NovaArtwork extends StatelessWidget {
           future: MusicLibrary().loadThumbnail(song, pixels),
           builder: (context, snapshot) {
             final bytes = snapshot.data;
-            return Container(
-              width: size,
-              height: size,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: colors.surfaceContainer,
-                border: Border.all(color: colors.outlineVariant),
-              ),
-              child: bytes == null
+            return _shaped(
+              lookOptions.value.artShape,
+              size,
+              colors,
+              bytes == null
                   ? Icon(
                       Icons.music_note_outlined,
                       color: colors.onSurfaceVariant,
@@ -1284,10 +1551,18 @@ class NovaArtwork extends StatelessWidget {
 }
 
 class MiniPlayer extends StatelessWidget {
-  const MiniPlayer({super.key, required this.controller, required this.onTap});
+  const MiniPlayer({
+    super.key,
+    required this.controller,
+    required this.onTap,
+    this.floating = false,
+  });
 
   final PlayerController controller;
   final VoidCallback onTap;
+
+  /// A rounded, raised card over the list instead of a bar across the bottom.
+  final bool floating;
 
   @override
   Widget build(BuildContext context) {
@@ -1295,6 +1570,11 @@ class MiniPlayer extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Material(
       color: colors.surfaceContainerHigh,
+      elevation: floating ? 6 : 0,
+      shape: floating
+          ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))
+          : null,
+      clipBehavior: floating ? Clip.antiAlias : Clip.none,
       child: InkWell(
         onTap: onTap,
         child: Column(
@@ -1311,7 +1591,26 @@ class MiniPlayer extends StatelessWidget {
                         0.0,
                         1.0,
                       );
-                return LinearProgressIndicator(value: progress, minHeight: 1);
+                final look = lookOptions.value;
+                if (!look.has(LookExtra.miniProgress)) {
+                  return LinearProgressIndicator(value: progress, minHeight: 1);
+                }
+                return FutureBuilder<List<double>?>(
+                  future: MusicLibrary.waveform(song, 72),
+                  builder: (context, bars) => Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                    child: CustomPaint(
+                      size: const Size.fromHeight(14),
+                      painter: _WaveformPainter(
+                        style: look.seekBar,
+                        peaks: bars.data ?? waveformPeaks(song.id, 72),
+                        progress: progress.toDouble(),
+                        color: colors.onSurface,
+                        phase: position.inMilliseconds / 1000 * 2 * math.pi,
+                      ),
+                    ),
+                  ),
+                );
               },
             ),
             Padding(
@@ -1366,248 +1665,783 @@ class NowPlayingPage extends StatelessWidget {
 
   final PlayerController controller;
 
-  @override
-  Widget build(BuildContext context) {
-    const monochrome = ColorScheme.dark(
-      primary: Colors.white,
-      onPrimary: Colors.black,
-      secondary: Colors.white,
-      onSecondary: Colors.black,
-      surface: Colors.black,
-      onSurface: Colors.white,
-      surfaceContainer: Color(0xFF0D0D0D),
-      surfaceContainerHigh: Color(0xFF171717),
-      onSurfaceVariant: Color(0xFFAFAFAF),
-      outline: Color(0xFF5C5C5C),
+  static const _monochrome = ColorScheme.dark(
+    primary: Colors.white,
+    onPrimary: Colors.black,
+    secondary: Colors.white,
+    onSecondary: Colors.black,
+    surface: Colors.black,
+    onSurface: Colors.white,
+    surfaceContainer: Color(0xFF0D0D0D),
+    surfaceContainerHigh: Color(0xFF171717),
+    onSurfaceVariant: Color(0xFFAFAFAF),
+    outline: Color(0xFF5C5C5C),
+    // Tonal buttons (the pill controls' previous and next): grey, not white.
+    secondaryContainer: Color(0x33FFFFFF),
+    onSecondaryContainer: Colors.white,
+  );
+
+  /// White on the dark backgrounds; the app's own theme on [PlayerBackground.theme].
+  static ThemeData themeFor(BuildContext context, LookOptions look) {
+    const clearBar = AppBarTheme(
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
     );
-    return Theme(
-      data: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorScheme: monochrome,
-        scaffoldBackgroundColor: Colors.black,
-        fontFamily: 'JetBrainsMonoNF',
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
+    if (look.background == PlayerBackground.theme) {
+      final base = Theme.of(context);
+      return base.copyWith(
+        scaffoldBackgroundColor: Colors.transparent,
+        appBarTheme: base.appBarTheme.copyWith(
+          backgroundColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
         ),
+      );
+    }
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      colorScheme: _monochrome,
+      scaffoldBackgroundColor: Colors.transparent,
+      fontFamily: 'JetBrainsMonoNF',
+      appBarTheme: clearBar.copyWith(foregroundColor: Colors.white),
+      sliderTheme: const SliderThemeData(inactiveTrackColor: Colors.white24),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder(
+      valueListenable: lookOptions,
+      builder: (context, look, _) => Theme(
+        data: themeFor(context, look),
+        child: AnimatedBuilder(
+          animation: controller,
+          builder: (context, _) => _build(context, look),
+        ),
       ),
-      child: AnimatedBuilder(
-        animation: controller,
-        builder: (context, _) {
-          final song = controller.currentSong;
-          if (song == null) return const SizedBox.shrink();
-          final screen = MediaQuery.sizeOf(context);
-          // Landscape: artwork and controls on the left, lyrics on the right.
-          final wide = screen.width > screen.height;
-          final playerSection = <Widget>[
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    song.title,
-                    maxLines: wide ? 1 : 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                ),
-                _FavouriteButton(song: song),
-              ],
-            ),
-            const SizedBox(height: 8),
-            DefaultTextStyle.merge(
-              style: const TextStyle(color: Color(0xFFAFAFAF)),
-              maxLines: 1,
+    );
+  }
+
+  Widget _build(BuildContext context, LookOptions look) {
+    final song = controller.currentSong;
+    if (song == null) return const SizedBox.shrink();
+    final screen = MediaQuery.sizeOf(context);
+    // Landscape: artwork and controls on the left, lyrics on the right.
+    final wide = screen.width > screen.height;
+    final centered = look.titleAlign == TitleAlign.center;
+    final layout = look.playerLayout;
+    Widget art(double size) => switch (layout) {
+      PlayerLayout.vinyl => _SpinningRecord(
+        controller: controller,
+        child: _DeviceArtwork(song: song, size: size, shape: ArtShape.circle),
+      ),
+      PlayerLayout.fullBleed => _DeviceArtwork(
+        song: song,
+        size: size,
+        shape: ArtShape.square,
+      ),
+      _ => _DeviceArtwork(song: song, size: size, shape: look.artShape),
+    };
+    final playerSection = <Widget>[
+      if (look.has(LookExtra.visualizer) && !wide) ...[
+        _VisualizerStrip(controller: controller),
+        const SizedBox(height: 16),
+      ],
+      Row(
+        children: [
+          // Balances the favourite button, so centered text is truly centered.
+          if (centered) const SizedBox(width: 48),
+          Expanded(
+            child: Text(
+              song.title,
+              maxLines: wide ? 1 : 2,
               overflow: TextOverflow.ellipsis,
-              child: Row(
+              textAlign: centered ? TextAlign.center : TextAlign.start,
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+          ),
+          _FavouriteButton(song: song),
+        ],
+      ),
+      const SizedBox(height: 8),
+      DefaultTextStyle.merge(
+        style: TextStyle(color: _fg(context, 0.69)),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        child: Row(
+          mainAxisAlignment: centered
+              ? MainAxisAlignment.center
+              : MainAxisAlignment.start,
+          children: [
+            Flexible(
+              child: InkWell(
+                onTap: () => openSongsWhere(
+                  context,
+                  controller,
+                  song.artist,
+                  (other) => other.artist == song.artist,
+                ),
+                child: Text(song.artist),
+              ),
+            ),
+            const Text('  /  '),
+            Flexible(
+              child: InkWell(
+                onTap: () => openSongsWhere(
+                  context,
+                  controller,
+                  song.album,
+                  song.sameAlbum,
+                ),
+                child: Text(song.album),
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 8),
+      _QualityLabel(
+        controller: controller,
+        song: song,
+        alignment: centered ? Alignment.center : Alignment.centerLeft,
+      ),
+      SizedBox(height: wide ? 8 : 18),
+      _WaveformSeekBar(
+        controller: controller,
+        song: song,
+        height: wide ? 36 : 72,
+      ),
+      SizedBox(height: wide ? 4 : 22),
+      _PlayerControls(controller: controller, style: look.controls, wide: wide),
+      if (look.has(LookExtra.volumeSlider)) ...[
+        const SizedBox(height: 12),
+        const _VolumeSlider(),
+      ],
+    ];
+    final playerTheme = Theme.of(context);
+    final Widget body;
+    if (wide) {
+      body = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // The artwork takes whatever height the controls leave.
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 12, 8),
+              child: Column(
                 children: [
-                  Flexible(
-                    child: InkWell(
-                      onTap: () => openSongsWhere(
-                        context,
-                        controller,
-                        song.artist,
-                        (other) => other.artist == song.artist,
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, box) => Center(
+                        child: art(math.min(box.maxWidth, box.maxHeight)),
                       ),
-                      child: Text(song.artist),
                     ),
                   ),
-                  const Text('  /  '),
-                  Flexible(
-                    child: InkWell(
-                      onTap: () => openSongsWhere(
-                        context,
-                        controller,
-                        song.album,
-                        song.sameAlbum,
+                  const SizedBox(height: 8),
+                  ...playerSection,
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(12, 12, 24, 20),
+              child: _LyricsPanel(controller: controller, song: song),
+            ),
+          ),
+        ],
+      );
+    } else if (layout == PlayerLayout.fullBleed) {
+      body = SingleChildScrollView(
+        padding: const EdgeInsets.only(bottom: 28),
+        child: Column(
+          children: [
+            // Fades the art's lower edge into whatever background is chosen.
+            ShaderMask(
+              blendMode: BlendMode.dstIn,
+              shaderCallback: (rect) => const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.black, Colors.black, Colors.transparent],
+                stops: [0, 0.6, 1],
+              ).createShader(rect),
+              child: Stack(
+                children: [
+                  art(screen.width),
+                  // Keeps the app bar readable over light covers.
+                  Container(
+                    height: 160,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0x99000000), Colors.transparent],
                       ),
-                      child: Text(song.album),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 8),
-            _QualityLabel(controller: controller, song: song),
-            SizedBox(height: wide ? 8 : 18),
-            _WaveformSeekBar(
-              controller: controller,
-              song: song,
-              height: wide ? 36 : 72,
-            ),
-            SizedBox(height: wide ? 4 : 22),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
-                  tooltip: controller.smartShuffle.enabled
-                      ? 'Smart shuffle'
-                      : 'Shuffle',
-                  color: controller.shuffleEnabled
-                      ? Colors.white
-                      : Colors.white54,
-                  onPressed: controller.toggleShuffle,
-                  icon: const Icon(Icons.shuffle_rounded),
-                ),
-                IconButton(
-                  tooltip: 'Previous',
-                  onPressed: controller.previous,
-                  iconSize: 34,
-                  icon: const Icon(Icons.skip_previous_rounded),
-                ),
-                IconButton.filled(
-                  tooltip: controller.player.playing ? 'Pause' : 'Play',
-                  onPressed: controller.togglePlay,
-                  padding: EdgeInsets.all(wide ? 10 : 18),
-                  iconSize: 38,
-                  icon: Icon(
-                    controller.player.playing
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Next',
-                  onPressed: controller.next,
-                  iconSize: 34,
-                  icon: const Icon(Icons.skip_next_rounded),
-                ),
-                IconButton(
-                  tooltip: 'Repeat',
-                  color: controller.player.loopMode != LoopMode.off
-                      ? Colors.white
-                      : Colors.white54,
-                  onPressed: controller.cycleLoopMode,
-                  icon: Icon(
-                    controller.player.loopMode == LoopMode.one
-                        ? Icons.repeat_one_rounded
-                        : Icons.repeat_rounded,
-                  ),
-                ),
-              ],
-            ),
-          ];
-          return Scaffold(
-            appBar: AppBar(
-              title: const Text(
-                'NOW PLAYING',
-                style: TextStyle(fontSize: 12, letterSpacing: 2.4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                children: [
+                  ...playerSection,
+                  const SizedBox(height: 40),
+                  _LyricsPanel(controller: controller, song: song),
+                ],
               ),
-              centerTitle: true,
-              actions: [
-                if (controller.sleepRemaining case final left?
-                    when controller.sleepTimerOn)
-                  TextButton.icon(
-                    onPressed: () => _showSleepSheet(context, controller),
-                    icon: const Icon(Icons.bedtime_rounded, size: 18),
-                    label: Text(_clockLabel(left)),
-                  )
-                else
-                  IconButton(
-                    tooltip: 'Sleep timer',
-                    onPressed: () => _showSleepSheet(context, controller),
-                    icon: const Icon(Icons.bedtime_outlined),
-                  ),
-                IconButton(
-                  tooltip: 'Queue',
-                  onPressed: () => showQueueSheet(context, controller),
-                  icon: Badge.count(
-                    count: controller.upcomingQueue.length,
-                    isLabelVisible: controller.upcomingQueue.isNotEmpty,
-                    child: const Icon(Icons.queue_music_rounded),
-                  ),
-                ),
-              ],
             ),
-            body: SafeArea(
-              top: false,
-              child: wide
-                  ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // The artwork takes whatever height the controls leave.
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(24, 0, 12, 8),
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: LayoutBuilder(
-                                    builder: (context, box) => Center(
-                                      child: _DeviceArtwork(
-                                        song: song,
-                                        size: math.min(
-                                          box.maxWidth,
-                                          box.maxHeight,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                ...playerSection,
-                              ],
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(12, 12, 24, 20),
-                            child: _LyricsPanel(
-                              controller: controller,
-                              song: song,
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
-                      child: Column(
-                        children: [
-                          _DeviceArtwork(
-                            song: song,
-                            size: math.min(screen.width - 48, 380.0),
-                          ),
-                          const SizedBox(height: 30),
-                          ...playerSection,
-                          const SizedBox(height: 40),
-                          _LyricsPanel(controller: controller, song: song),
-                        ],
+          ],
+        ),
+      );
+    } else {
+      final artSize = switch (layout) {
+        PlayerLayout.centeredCard => math.min(screen.width - 112, 300.0),
+        PlayerLayout.vinyl => math.min(screen.width - 72, 340.0),
+        _ => math.min(screen.width - 48, 380.0),
+      };
+      body = SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+        child: Column(
+          children: [
+            if (layout == PlayerLayout.centeredCard) const SizedBox(height: 28),
+            art(artSize),
+            SizedBox(height: layout == PlayerLayout.centeredCard ? 44 : 30),
+            ...playerSection,
+            const SizedBox(height: 40),
+            _LyricsPanel(controller: controller, song: song),
+          ],
+        ),
+      );
+    }
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: _PlayerBackdrop(song: song, background: look.background),
+        ),
+        Scaffold(
+          extendBodyBehindAppBar: layout == PlayerLayout.fullBleed && !wide,
+          appBar: AppBar(
+            title: const Text(
+              'NOW PLAYING',
+              style: TextStyle(fontSize: 12, letterSpacing: 2.4),
+            ),
+            centerTitle: true,
+            actions: [
+              if (look.has(LookExtra.lyricsBackdrop))
+                IconButton(
+                  tooltip: 'Lyrics',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => Theme(
+                        data: playerTheme,
+                        child: _LyricsScreen(controller: controller),
                       ),
                     ),
+                  ),
+                  icon: const Icon(Icons.lyrics_outlined),
+                ),
+              if (controller.speed != 1 || controller.pitch != 1)
+                TextButton(
+                  onPressed: () => _showPlaybackSheet(context, controller),
+                  child: Text('${controller.speed.toStringAsFixed(2)}×'),
+                )
+              else
+                IconButton(
+                  tooltip: 'Speed and pitch',
+                  onPressed: () => _showPlaybackSheet(context, controller),
+                  icon: const Icon(Icons.speed_rounded),
+                ),
+              if (controller.sleepRemaining case final left?
+                  when controller.sleepTimerOn)
+                TextButton.icon(
+                  onPressed: () => _showSleepSheet(context, controller),
+                  icon: const Icon(Icons.bedtime_rounded, size: 18),
+                  label: Text(_clockLabel(left)),
+                )
+              else
+                IconButton(
+                  tooltip: 'Sleep timer',
+                  onPressed: () => _showSleepSheet(context, controller),
+                  icon: const Icon(Icons.bedtime_outlined),
+                ),
+              IconButton(
+                tooltip: 'Queue',
+                onPressed: () => showQueueSheet(context, controller),
+                icon: Badge.count(
+                  count: controller.upcomingQueue.length,
+                  isLabelVisible: controller.upcomingQueue.isNotEmpty,
+                  child: const Icon(Icons.queue_music_rounded),
+                ),
+              ),
+            ],
+          ),
+          body: SafeArea(top: false, child: body),
+        ),
+      ],
+    );
+  }
+}
+
+/// Bars that move with what the player is outputting, from Android's visualizer.
+class _VisualizerStrip extends StatefulWidget {
+  const _VisualizerStrip({required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  State<_VisualizerStrip> createState() => _VisualizerStripState();
+}
+
+class _VisualizerStripState extends State<_VisualizerStrip> {
+  StreamSubscription<int?>? _session;
+  StreamSubscription<List<double>>? _levels;
+  List<double> _bands = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    // The session changes when the player rebuilds its output; follow it.
+    _session = widget.controller.player.androidAudioSessionIdStream.listen((
+      id,
+    ) {
+      _levels?.cancel();
+      _levels = id == null
+          ? null
+          : MusicLibrary.visualizer(id).listen(
+              (bands) => setState(() {
+                // Falls slowly and jumps up fast, so bars don't flicker.
+                _bands = [
+                  for (var i = 0; i < bands.length; i++)
+                    math.max(
+                      bands[i],
+                      i < _bands.length ? _bands[i] * 0.8 : 0.0,
+                    ),
+                ];
+              }),
+              onError: (Object _) {},
+            );
+    });
+  }
+
+  @override
+  void dispose() {
+    _session?.cancel();
+    _levels?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      width: double.infinity,
+      child: CustomPaint(painter: _BandsPainter(_bands, _fg(context, 0.7))),
+    );
+  }
+}
+
+class _BandsPainter extends CustomPainter {
+  const _BandsPainter(this.bands, this.color);
+
+  final List<double> bands;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (bands.isEmpty) return;
+    final step = size.width / bands.length;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = step * 0.55
+      ..strokeCap = StrokeCap.round;
+    for (var i = 0; i < bands.length; i++) {
+      final x = step * (i + 0.5);
+      final height = math.max(2.0, bands[i] * size.height);
+      canvas.drawLine(
+        Offset(x, size.height),
+        Offset(x, size.height - height),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_BandsPainter oldDelegate) =>
+      oldDelegate.bands != bands || oldDelegate.color != color;
+}
+
+/// Lyrics alone, full screen, over the blurred cover.
+class _LyricsScreen extends StatelessWidget {
+  const _LyricsScreen({required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final song = controller.currentSong;
+        if (song == null) return const SizedBox.shrink();
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: _PlayerBackdrop(
+                song: song,
+                background: PlayerBackground.blurredArt,
+              ),
             ),
+            Scaffold(
+              appBar: AppBar(
+                title: Text(song.title, overflow: TextOverflow.ellipsis),
+              ),
+              body: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 40),
+                child: _LyricsPanel(controller: controller, song: song),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// What sits behind the player: plain, tinted by the cover, or the blurred cover.
+class _PlayerBackdrop extends StatelessWidget {
+  const _PlayerBackdrop({required this.song, required this.background});
+
+  final Song song;
+  final PlayerBackground background;
+
+  @override
+  Widget build(BuildContext context) {
+    switch (background) {
+      case PlayerBackground.theme:
+        return ColoredBox(color: Theme.of(context).colorScheme.surface);
+      case PlayerBackground.black:
+        return const ColoredBox(color: Colors.black);
+      case _:
+    }
+    return FutureBuilder<Uint8List?>(
+      future: MusicLibrary().loadThumbnail(song, 256),
+      builder: (context, art) {
+        final bytes = art.data;
+        if (bytes == null) return const ColoredBox(color: Colors.black);
+        if (background == PlayerBackground.blurredArt) {
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+                child: Image.memory(
+                  bytes,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                ),
+              ),
+              // Darkened, so white text stays readable on light covers.
+              const ColoredBox(color: Color(0x99000000)),
+            ],
           );
-        },
+        }
+        return FutureBuilder<Color?>(
+          future: albumColor(song.id, bytes),
+          builder: (context, picked) {
+            // Kept dark, so white text stays readable on light covers.
+            final hsl = HSLColor.fromColor(picked.data ?? Colors.black);
+            final tint = hsl
+                .withLightness(math.min(hsl.lightness, 0.3))
+                .toColor();
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              decoration: BoxDecoration(
+                gradient: background == PlayerBackground.gradient
+                    ? LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [tint, Colors.black],
+                        stops: const [0, 0.75],
+                      )
+                    : null,
+                color: background == PlayerBackground.gradient ? null : tint,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// Spins its round [child] like a record while the song plays.
+class _SpinningRecord extends StatefulWidget {
+  const _SpinningRecord({required this.controller, required this.child});
+
+  final PlayerController controller;
+  final Widget child;
+
+  @override
+  State<_SpinningRecord> createState() => _SpinningRecordState();
+}
+
+class _SpinningRecordState extends State<_SpinningRecord>
+    with SingleTickerProviderStateMixin {
+  late final _spin = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 20),
+  );
+  StreamSubscription<bool>? _playing;
+
+  @override
+  void initState() {
+    super.initState();
+    _playing = widget.controller.player.playingStream.listen(
+      (playing) => playing ? _spin.repeat() : _spin.stop(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _playing?.cancel();
+    _spin.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Color(0xFF111111),
+        boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 24)],
       ),
+      child: RotationTransition(
+        turns: _spin,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            widget.child,
+            // The record's spindle hole.
+            Container(
+              width: 18,
+              height: 18,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xFF111111),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shuffle, previous, play, next and repeat, drawn in the chosen [style].
+class _PlayerControls extends StatelessWidget {
+  const _PlayerControls({
+    required this.controller,
+    required this.style,
+    required this.wide,
+  });
+
+  final PlayerController controller;
+  final ControlStyle style;
+  final bool wide;
+
+  @override
+  Widget build(BuildContext context) {
+    final playing = controller.player.playing;
+    final playIcon = Icon(
+      playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+    );
+    final shuffle = IconButton(
+      tooltip: controller.smartShuffle.enabled ? 'Smart shuffle' : 'Shuffle',
+      color: _fg(context, controller.shuffleEnabled ? 1 : 0.54),
+      onPressed: controller.toggleShuffle,
+      icon: const Icon(Icons.shuffle_rounded),
+    );
+    final repeat = IconButton(
+      tooltip: 'Repeat',
+      color: _fg(
+        context,
+        controller.player.loopMode != LoopMode.off ? 1 : 0.54,
+      ),
+      onPressed: controller.cycleLoopMode,
+      icon: Icon(
+        controller.player.loopMode == LoopMode.one
+            ? Icons.repeat_one_rounded
+            : Icons.repeat_rounded,
+      ),
+    );
+    const previousIcon = Icon(Icons.skip_previous_rounded);
+    const nextIcon = Icon(Icons.skip_next_rounded);
+    final playTip = playing ? 'Pause' : 'Play';
+
+    if (style == ControlStyle.pills) {
+      final height = wide ? 48.0 : 64.0;
+      Widget pill(Widget button, {int flex = 1}) => Expanded(
+        flex: flex,
+        child: SizedBox(height: height, child: button),
+      );
+      return Row(
+        children: [
+          shuffle,
+          pill(
+            FilledButton.tonal(
+              onPressed: controller.previous,
+              child: previousIcon,
+            ),
+          ),
+          const SizedBox(width: 8),
+          pill(
+            flex: 2,
+            Tooltip(
+              message: playTip,
+              child: FilledButton(
+                onPressed: controller.togglePlay,
+                child: IconTheme.merge(
+                  data: const IconThemeData(size: 36),
+                  child: playIcon,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          pill(FilledButton.tonal(onPressed: controller.next, child: nextIcon)),
+          repeat,
+        ],
+      );
+    }
+
+    final (Widget previous, Widget play, Widget next) = switch (style) {
+      ControlStyle.circles => (
+        IconButton.outlined(
+          tooltip: 'Previous',
+          onPressed: controller.previous,
+          iconSize: 30,
+          icon: previousIcon,
+        ),
+        IconButton.filled(
+          tooltip: playTip,
+          onPressed: controller.togglePlay,
+          padding: EdgeInsets.all(wide ? 10 : 20),
+          iconSize: 40,
+          icon: playIcon,
+        ),
+        IconButton.outlined(
+          tooltip: 'Next',
+          onPressed: controller.next,
+          iconSize: 30,
+          icon: nextIcon,
+        ),
+      ),
+      ControlStyle.bigMinimal => (
+        IconButton(
+          tooltip: 'Previous',
+          onPressed: controller.previous,
+          iconSize: 48,
+          icon: previousIcon,
+        ),
+        IconButton(
+          tooltip: playTip,
+          onPressed: controller.togglePlay,
+          iconSize: wide ? 56 : 76,
+          icon: playIcon,
+        ),
+        IconButton(
+          tooltip: 'Next',
+          onPressed: controller.next,
+          iconSize: 48,
+          icon: nextIcon,
+        ),
+      ),
+      _ => (
+        IconButton(
+          tooltip: 'Previous',
+          onPressed: controller.previous,
+          iconSize: 34,
+          icon: previousIcon,
+        ),
+        IconButton.filled(
+          tooltip: playTip,
+          onPressed: controller.togglePlay,
+          padding: EdgeInsets.all(wide ? 10 : 18),
+          iconSize: 38,
+          icon: playIcon,
+        ),
+        IconButton(
+          tooltip: 'Next',
+          onPressed: controller.next,
+          iconSize: 34,
+          icon: nextIcon,
+        ),
+      ),
+    };
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [shuffle, previous, play, next, repeat],
+    );
+  }
+}
+
+/// The phone's media volume, not the player's, which levelling and the sleep
+/// timer's fade already use.
+class _VolumeSlider extends StatefulWidget {
+  const _VolumeSlider();
+
+  @override
+  State<_VolumeSlider> createState() => _VolumeSliderState();
+}
+
+class _VolumeSliderState extends State<_VolumeSlider> {
+  // shortcut: read once when shown, so the hardware buttons' changes appear
+  // only next time; listen to volume changes if that matters.
+  double? _volume;
+
+  @override
+  void initState() {
+    super.initState();
+    MusicLibrary.mediaVolume().then((value) {
+      if (mounted) setState(() => _volume = value);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final volume = _volume;
+    if (volume == null) return const SizedBox(height: 48);
+    return Row(
+      children: [
+        Icon(Icons.volume_down_rounded, color: _fg(context, 0.54)),
+        Expanded(
+          child: Slider(
+            value: volume,
+            onChanged: (value) {
+              setState(() => _volume = value);
+              MusicLibrary.setMediaVolume(value);
+            },
+          ),
+        ),
+        Icon(Icons.volume_up_rounded, color: _fg(context, 0.54)),
+      ],
     );
   }
 }
 
 /// The file's format and audio details, and any volume levelling applied.
 class _QualityLabel extends StatelessWidget {
-  const _QualityLabel({required this.controller, required this.song});
+  const _QualityLabel({
+    required this.controller,
+    required this.song,
+    this.alignment = Alignment.centerLeft,
+  });
+
+  final AlignmentGeometry alignment;
 
   final PlayerController controller;
   final Song song;
@@ -1622,7 +2456,7 @@ class _QualityLabel extends StatelessWidget {
             : const <String, Object?>{};
         final gain = controller.levelGain;
         return Align(
-          alignment: Alignment.centerLeft,
+          alignment: alignment,
           child: Text(
             [
               qualityLabel(song.format, info),
@@ -1631,7 +2465,7 @@ class _QualityLabel extends StatelessWidget {
             ].join(' · '),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white54, fontSize: 11),
+            style: TextStyle(color: _fg(context, 0.54), fontSize: 11),
           ),
         );
       },
@@ -1874,10 +2708,10 @@ class _LyricsPanelState extends State<_LyricsPanel> {
         if (lines.isEmpty) {
           return Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
                   'No lyrics found for this song',
-                  style: TextStyle(color: Colors.white38, fontSize: 12),
+                  style: TextStyle(color: _fg(context, 0.38), fontSize: 12),
                 ),
               ),
               TextButton.icon(
@@ -2029,7 +2863,7 @@ class _LyricsPanelState extends State<_LyricsPanel> {
                       width: _picked == null ? null : double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       color: _picked?.contains(i) ?? false
-                          ? Colors.white24
+                          ? _fg(context, 0.24)
                           : null,
                       child: AnimatedDefaultTextStyle(
                         duration: const Duration(milliseconds: 250),
@@ -2043,8 +2877,8 @@ class _LyricsPanelState extends State<_LyricsPanel> {
                           color: !synced || i == active
                               ? Colors.white
                               : i < active
-                              ? Colors.white54
-                              : Colors.white30,
+                              ? _fg(context, 0.54)
+                              : _fg(context, 0.30),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2142,8 +2976,8 @@ class _LyricsCardDialogState extends State<_LyricsCardDialog> {
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Text(
                             line.isEmpty ? '♪' : line,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: _fg(context),
                               fontSize: 20,
                               height: 1.35,
                               fontWeight: FontWeight.w700,
@@ -2163,14 +2997,14 @@ class _LyricsCardDialogState extends State<_LyricsCardDialog> {
                                   song.title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: Colors.white),
+                                  style: TextStyle(color: _fg(context)),
                                 ),
                                 Text(
                                   song.artist,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white54,
+                                  style: TextStyle(
+                                    color: _fg(context, 0.54),
                                     fontSize: 12,
                                   ),
                                 ),
@@ -2205,11 +3039,20 @@ class _LyricsCardDialogState extends State<_LyricsCardDialog> {
   }
 }
 
+/// The player's text and icon color, at [alpha]; follows the player theme.
+Color _fg(BuildContext context, [double alpha = 1]) =>
+    Theme.of(context).colorScheme.onSurface.withValues(alpha: alpha);
+
 class _DeviceArtwork extends StatelessWidget {
-  const _DeviceArtwork({required this.song, required this.size});
+  const _DeviceArtwork({
+    required this.song,
+    required this.size,
+    this.shape = ArtShape.square,
+  });
 
   final Song song;
   final double size;
+  final ArtShape shape;
 
   @override
   Widget build(BuildContext context) {
@@ -2222,15 +3065,11 @@ class _DeviceArtwork extends StatelessWidget {
         future: MusicLibrary().loadThumbnail(song, pixels),
         builder: (context, snapshot) {
           final bytes = snapshot.data;
-          return Container(
-            width: size,
-            height: size,
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: colors.surfaceContainer,
-              border: Border.all(color: colors.outlineVariant),
-            ),
-            child: bytes == null
+          return _shaped(
+            shape,
+            size,
+            colors,
+            bytes == null
                 ? Icon(
                     Icons.album_outlined,
                     color: colors.onSurfaceVariant,
@@ -2268,105 +3107,258 @@ class _WaveformSeekBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<Duration>(
-      stream: controller.player.positionStream,
-      builder: (context, snapshot) {
-        final duration = controller.player.duration ?? song.duration;
-        final position = snapshot.data ?? Duration.zero;
-        final max = math.max(1, duration.inMilliseconds).toDouble();
-        final value = position.inMilliseconds.clamp(0, max.toInt()).toDouble();
-        final progress = value / max;
-        return Column(
-          children: [
-            SizedBox(
-              height: height,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _WaveformPainter(
-                        peaks: waveformPeaks(song.id, 72),
-                        progress: progress,
-                      ),
-                    ),
-                  ),
-                  Positioned.fill(
-                    child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        activeTrackColor: Colors.transparent,
-                        inactiveTrackColor: Colors.transparent,
-                        trackHeight: 0,
-                        thumbColor: Colors.white,
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 4,
-                        ),
-                        overlayColor: Colors.white12,
-                      ),
-                      child: Slider(
-                        // No inset, so the dot spans the same width as the waveform bars.
-                        padding: EdgeInsets.zero,
-                        value: value,
-                        max: max,
-                        onChanged: (next) => controller.player.seek(
-                          Duration(milliseconds: next.round()),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return ValueListenableBuilder(
+      valueListenable: lookOptions,
+      builder: (context, look, _) => FutureBuilder<List<double>?>(
+        future: MusicLibrary.waveform(song, 72),
+        builder: (context, bars) => StreamBuilder<Duration>(
+          stream: controller.player.positionStream,
+          builder: (context, snapshot) {
+            final duration = controller.player.duration ?? song.duration;
+            final position = snapshot.data ?? Duration.zero;
+            final max = math.max(1, duration.inMilliseconds).toDouble();
+            final value = position.inMilliseconds
+                .clamp(0, max.toInt())
+                .toDouble();
+            final progress = value / max;
+            return Column(
               children: [
-                Text(
-                  _label(position),
-                  style: Theme.of(context).textTheme.labelSmall,
+                SizedBox(
+                  height: height,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _WaveformPainter(
+                            style: look.seekBar,
+                            color: Theme.of(context).colorScheme.onSurface,
+                            phase: position.inMilliseconds / 1000 * 2 * math.pi,
+                            // Shaped stand-in until the real bars are decoded.
+                            peaks: bars.data ?? waveformPeaks(song.id, 72),
+                            progress: progress,
+                          ),
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            activeTrackColor: Colors.transparent,
+                            inactiveTrackColor: Colors.transparent,
+                            trackHeight: 0,
+                            thumbColor: Theme.of(context).colorScheme.onSurface,
+                            thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 4,
+                            ),
+                            overlayColor: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.12),
+                          ),
+                          child: Slider(
+                            // No inset, so the dot spans the same width as the waveform bars.
+                            padding: EdgeInsets.zero,
+                            value: value,
+                            max: max,
+                            onChanged: (next) => controller.player.seek(
+                              Duration(milliseconds: next.round()),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                Text(
-                  _label(duration),
-                  style: Theme.of(context).textTheme.labelSmall,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _label(position),
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                    Text(
+                      _label(duration),
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ],
                 ),
               ],
-            ),
-          ],
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 }
 
 class _WaveformPainter extends CustomPainter {
-  const _WaveformPainter({required this.peaks, required this.progress});
+  const _WaveformPainter({
+    required this.style,
+    required this.peaks,
+    required this.progress,
+    this.color = Colors.white,
+    this.phase = 0,
+  });
 
+  final SeekBarStyle style;
   final List<double> peaks;
   final double progress;
+  final Color color;
+
+  /// Shifts the squiggle; follows the play position, so it moves only while playing.
+  final double phase;
 
   @override
   void paint(Canvas canvas, Size size) {
-    // shortcut: shaped bars avoid decoding large FLAC files; decode cached peaks
-    // when exact source-audio waveforms become worth the storage and CPU cost.
     final spacing = size.width / peaks.length;
-    final activeBars = (peaks.length * progress).round();
-    final paint = Paint()
-      ..strokeWidth = math.max(1, spacing * 0.42)
-      ..strokeCap = StrokeCap.round;
-    for (var index = 0; index < peaks.length; index++) {
-      paint.color = index < activeBars ? Colors.white : Colors.white24;
-      final x = spacing * (index + 0.5);
-      final height = peaks[index] * size.height;
-      canvas.drawLine(
-        Offset(x, (size.height - height) / 2),
-        Offset(x, (size.height + height) / 2),
-        paint,
-      );
+    final mid = size.height / 2;
+    final played = size.width * progress;
+    final rest = color.withValues(alpha: 0.24);
+    // Draws the shape twice, clipped at the playhead: played part, then the rest.
+    void split(void Function(Paint paint) draw) {
+      for (final (from, to, paintColor) in [
+        (0.0, played, color),
+        (played, size.width, rest),
+      ]) {
+        canvas.save();
+        canvas.clipRect(Rect.fromLTRB(from, 0, to, size.height));
+        draw(Paint()..color = paintColor);
+        canvas.restore();
+      }
+    }
+
+    void bars({required bool fromBottom}) => split((paint) {
+      paint
+        ..strokeWidth = math.max(1, spacing * 0.42)
+        ..strokeCap = StrokeCap.round;
+      for (var index = 0; index < peaks.length; index++) {
+        final x = spacing * (index + 0.5);
+        final height = peaks[index] * size.height;
+        canvas.drawLine(
+          Offset(x, fromBottom ? size.height : mid - height / 2),
+          Offset(x, fromBottom ? size.height - height : mid + height / 2),
+          paint,
+        );
+      }
+    });
+
+    switch (style) {
+      case SeekBarStyle.bars:
+        bars(fromBottom: false);
+      case SeekBarStyle.mirrorBars:
+        bars(fromBottom: true);
+      case SeekBarStyle.wave:
+        // Curves through the midpoints between bar tops, mirrored below.
+        final top = [
+          Offset(0, mid),
+          for (var index = 0; index < peaks.length; index++)
+            Offset(spacing * (index + 0.5), mid - peaks[index] * mid),
+          Offset(size.width, mid),
+        ];
+        final bottom = [
+          for (final point in top.reversed)
+            Offset(point.dx, 2 * mid - point.dy),
+        ];
+        final path = Path()..moveTo(0, mid);
+        for (final points in [top, bottom]) {
+          for (var index = 1; index < points.length; index++) {
+            final a = points[index - 1];
+            final b = points[index];
+            path.quadraticBezierTo(
+              a.dx,
+              a.dy,
+              (a.dx + b.dx) / 2,
+              (a.dy + b.dy) / 2,
+            );
+          }
+          path.lineTo(points.last.dx, points.last.dy);
+        }
+        path.close();
+        split((paint) => canvas.drawPath(path, paint));
+      case SeekBarStyle.dots:
+        split((paint) {
+          for (var index = 0; index < peaks.length; index++) {
+            final radius = spacing * (0.12 + 0.33 * peaks[index]);
+            canvas.drawCircle(
+              Offset(spacing * (index + 0.5), mid),
+              radius,
+              paint,
+            );
+          }
+        });
+      case SeekBarStyle.line:
+        split((paint) {
+          paint
+            ..strokeWidth = 3
+            ..strokeCap = StrokeCap.round;
+          canvas.drawLine(
+            Offset(1.5, mid),
+            Offset(size.width - 1.5, mid),
+            paint,
+          );
+        });
+      case SeekBarStyle.squiggle:
+        final stroke = Paint()
+          ..strokeWidth = 4
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke;
+        final amplitude = math.min(mid * 0.5, 5.0);
+        final wave = Path()..moveTo(2, mid + amplitude * math.sin(phase));
+        for (var x = 2.0; x <= played; x += 2) {
+          wave.lineTo(
+            x,
+            mid + amplitude * math.sin(x / 30 * 2 * math.pi + phase),
+          );
+        }
+        canvas.drawPath(wave, stroke..color = color);
+        if (played < size.width - 2) {
+          canvas.drawLine(
+            Offset(math.max(played + 6, 2), mid),
+            Offset(size.width - 2, mid),
+            stroke..color = rest,
+          );
+        }
+      case SeekBarStyle.pill:
+        final thickness = math.min(14.0, size.height * 0.4);
+        split(
+          (paint) => canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromCenter(
+                center: Offset(size.width / 2, mid),
+                width: size.width,
+                height: thickness,
+              ),
+              Radius.circular(thickness / 2),
+            ),
+            paint,
+          ),
+        );
+      case SeekBarStyle.segments:
+        const count = 32;
+        final step = size.width / count;
+        final height = math.min(12.0, size.height * 0.35);
+        for (var index = 0; index < count; index++) {
+          final rect = Rect.fromLTWH(
+            step * index + step * 0.15,
+            mid - height / 2,
+            step * 0.7,
+            height,
+          );
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(rect, const Radius.circular(2)),
+            Paint()..color = rect.center.dx <= played ? color : rest,
+          );
+        }
     }
   }
 
   @override
   bool shouldRepaint(_WaveformPainter oldDelegate) =>
-      oldDelegate.progress != progress || oldDelegate.peaks != peaks;
+      oldDelegate.progress != progress ||
+      oldDelegate.peaks != peaks ||
+      oldDelegate.style != style ||
+      oldDelegate.color != color ||
+      oldDelegate.phase != phase;
 }
 
 class _LibraryMessage extends StatelessWidget {
@@ -2640,6 +3632,21 @@ class _GroupedLibraryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Follows the main page: text only lists names, compact fits three across.
+    final layout = lookOptions.value.listLayout;
+    final entries = groups.entries.toList();
+    String label(int index) =>
+        name?.call(entries[index].value) ?? entries[index].key;
+    void open(BuildContext context, int index) => Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SongCollectionPage(
+          title: label(index),
+          subtitle: _trackCount(entries[index].value.length),
+          songs: entries[index].value,
+          player: player,
+        ),
+      ),
+    );
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -2656,30 +3663,36 @@ class _GroupedLibraryPage extends StatelessWidget {
       ),
       body: groups.isEmpty
           ? Center(child: Text('No ${title.toLowerCase()} found.'))
+          : layout == ListLayout.textOnly
+          ? ListView.builder(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 32),
+              itemCount: entries.length,
+              itemBuilder: (context, index) {
+                final tracks = entries[index].value;
+                return ListTile(
+                  title: Text(
+                    label(index),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(detail(tracks)),
+                  onTap: () => open(context, index),
+                );
+              },
+            )
           : GridView.builder(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-              itemCount: groups.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
+              itemCount: entries.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: layout == ListLayout.compact ? 3 : 2,
                 mainAxisSpacing: 24,
                 crossAxisSpacing: 18,
-                childAspectRatio: 0.76,
+                childAspectRatio: layout == ListLayout.compact ? 0.7 : 0.76,
               ),
               itemBuilder: (context, index) {
-                final entry = groups.entries.elementAt(index);
-                final tracks = entry.value;
-                final label = name?.call(tracks) ?? entry.key;
+                final tracks = entries[index].value;
                 return InkWell(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => SongCollectionPage(
-                        title: label,
-                        subtitle: _trackCount(tracks.length),
-                        songs: tracks,
-                        player: player,
-                      ),
-                    ),
-                  ),
+                  onTap: () => open(context, index),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -2688,6 +3701,7 @@ class _GroupedLibraryPage extends StatelessWidget {
                           builder: (context, constraints) => Center(
                             child: _DeviceArtwork(
                               song: tracks.first,
+                              shape: lookOptions.value.artShape,
                               size: math.min(
                                 constraints.maxWidth,
                                 constraints.maxHeight,
@@ -2698,7 +3712,7 @@ class _GroupedLibraryPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        label,
+                        label(index),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w500),
@@ -2837,7 +3851,11 @@ class _SongCollectionPageState extends State<SongCollectionPage>
     padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
     child: Row(
       children: [
-        _DeviceArtwork(song: songs.first, size: 96),
+        _DeviceArtwork(
+          song: songs.first,
+          size: 96,
+          shape: lookOptions.value.artShape,
+        ),
         const SizedBox(width: 18),
         Expanded(
           child: Text(
@@ -3322,6 +4340,18 @@ class SmartPlaylistsPage extends StatelessWidget {
             subtitle: const Text('The 50 songs added to your phone last'),
             onTap: () =>
                 _open(context, 'Newest songs', (_) => newestSongs(library)),
+          ),
+          ListTile(
+            leading: const Icon(Icons.history_toggle_off_rounded),
+            title: const Text('Rediscover'),
+            subtitle: const Text(
+              'Songs you played a lot, but not in the last 30 days',
+            ),
+            onTap: () => _open(
+              context,
+              'Rediscover',
+              (history) => rediscover(history, library, DateTime.now()),
+            ),
           ),
           ListTile(
             leading: const Icon(Icons.explore_outlined),
@@ -3948,6 +4978,81 @@ String _clockLabel(Duration time) {
       : '$minutes:${two(seconds % 60)}';
 }
 
+Future<void> _showPlaybackSheet(
+  BuildContext context,
+  PlayerController controller,
+) {
+  Future<void> change({double? speed, double? pitch, bool? skipSilence}) async {
+    await controller.setPlayback(
+      speed: speed,
+      pitch: pitch,
+      skipSilence: skipSilence,
+    );
+    await SettingsStore().savePlayback(
+      speed: controller.speed,
+      pitch: controller.pitch,
+      skipSilence: controller.skipSilence,
+    );
+  }
+
+  Widget slider(
+    String label,
+    double value,
+    void Function(double value) onChanged,
+  ) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 24),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('$label  ${value.toStringAsFixed(2)}×'),
+        Row(
+          children: [
+            Expanded(
+              child: Slider(
+                value: value,
+                min: 0.5,
+                max: 2.0,
+                // 0.05 steps, so 1.0 is easy to land on again.
+                divisions: 30,
+                onChanged: onChanged,
+              ),
+            ),
+            TextButton(
+              onPressed: value == 1 ? null : () => onChanged(1),
+              child: const Text('Reset'),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheet) => ListenableBuilder(
+      listenable: controller,
+      builder: (sheet, _) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            slider('Speed', controller.speed, (v) => change(speed: v)),
+            slider('Pitch', controller.pitch, (v) => change(pitch: v)),
+            SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              title: const Text('Skip silence'),
+              subtitle: const Text('Jump over quiet gaps in the audio.'),
+              value: controller.skipSilence,
+              onChanged: (on) => change(skipSilence: on),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 Future<void> _showSleepSheet(
   BuildContext context,
   PlayerController controller,
@@ -4298,8 +5403,6 @@ class SettingsPage extends StatefulWidget {
     required this.initialMode,
     required this.themeController,
     required this.onModeChanged,
-    required this.initialSearchBarStyle,
-    required this.onSearchBarStyleChanged,
     required this.initialLevelling,
     required this.onLevellingChanged,
     required this.initialSmartShuffle,
@@ -4313,8 +5416,6 @@ class SettingsPage extends StatefulWidget {
   final QueueMode initialMode;
   final ThemeController themeController;
   final Future<void> Function(QueueMode mode) onModeChanged;
-  final SearchBarStyle initialSearchBarStyle;
-  final Future<void> Function(SearchBarStyle style) onSearchBarStyleChanged;
   final LevellingMode initialLevelling;
   final Future<void> Function(LevellingMode mode) onLevellingChanged;
   final SmartShuffle initialSmartShuffle;
@@ -4332,7 +5433,6 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late QueueMode _mode;
-  late SearchBarStyle _searchBarStyle;
   late LevellingMode _levelling;
   late SmartShuffle _smartShuffle;
   String? _lyricsFolder;
@@ -4343,7 +5443,6 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _mode = widget.initialMode;
-    _searchBarStyle = widget.initialSearchBarStyle;
     _levelling = widget.initialLevelling;
     _smartShuffle = widget.initialSmartShuffle;
     widget.themeController.addListener(_themeChanged);
@@ -4508,11 +5607,17 @@ class _SettingsPageState extends State<SettingsPage> {
             onTap: () => _open('Text size', _sizes),
           ),
           ListTile(
-            leading: const Icon(Icons.search_rounded),
-            title: const Text('Search bar'),
-            subtitle: Text(_searchBarStyle.title),
+            leading: const Icon(Icons.auto_awesome_rounded),
+            title: const Text('Look & feel'),
+            subtitle: Text(
+              looks
+                      .where((look) => look.options == lookOptions.value)
+                      .firstOrNull
+                      ?.name ??
+                  'Custom',
+            ),
             trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => _open('Search bar', _searchBar),
+            onTap: () => _open('Look & feel', _lookAndFeel),
           ),
           ListTile(
             leading: const Icon(Icons.folder_open_rounded),
@@ -4935,20 +6040,164 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _searchBar(BuildContext context) {
-    return StatefulBuilder(
-      builder: (context, setPageState) => ListView(
+  Widget _lookAndFeel(BuildContext context) {
+    final preview = waveformPeaks('preview', 40);
+    final theme = Theme.of(context);
+    void pick(LookOptions options) =>
+        widget.themeController.selectLook(options);
+    // Black like the now playing page's default, which the painter is drawn for.
+    Widget miniPlayer(LookOptions options) => Container(
+      height: 56,
+      padding: const EdgeInsets.all(8),
+      color: Colors.black,
+      child: Row(
+        children: [
+          ClipPath(
+            clipper: ArtShapeClipper(
+              options.playerLayout == PlayerLayout.vinyl
+                  ? ArtShape.circle
+                  : options.artShape,
+            ),
+            child: Container(width: 40, height: 40, color: Colors.white70),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: CustomPaint(
+              size: const Size.fromHeight(40),
+              painter: _WaveformPainter(
+                style: options.seekBar,
+                peaks: preview,
+                progress: 0.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return ValueListenableBuilder(
+      valueListenable: lookOptions,
+      builder: (context, current, _) => ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
         children: [
-          for (final style in SearchBarStyle.values)
+          Text('Looks', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'A look sets everything below at once; change any part after.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          for (final look in looks)
             _ChoiceCard(
-              selected: _searchBarStyle == style,
-              title: Text(style.title),
-              body: Text(style.description),
-              onTap: () async {
-                setState(() => _searchBarStyle = style);
-                setPageState(() {});
-                await widget.onSearchBarStyleChanged(style);
+              selected: look.options == current,
+              title: Text(look.name),
+              body: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(look.description),
+                  const SizedBox(height: 10),
+                  miniPlayer(look.options),
+                ],
+              ),
+              onTap: () => pick(look.options),
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.copy_rounded),
+                  label: const Text('Copy look'),
+                  onPressed: () async {
+                    await Clipboard.setData(
+                      ClipboardData(text: lookCode(current)),
+                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Look code copied; paste it anywhere.'),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.content_paste_rounded),
+                  label: const Text('Paste look'),
+                  onPressed: () async {
+                    final text = (await Clipboard.getData('text/plain'))?.text;
+                    final pasted = text == null ? null : lookFromCode(text);
+                    if (pasted != null) pick(pasted);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            pasted == null
+                                ? 'No look code on the clipboard.'
+                                : 'Look applied.',
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Text('Customize', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          miniPlayer(current),
+          for (final (heading, values) in lookChoices) ...[
+            const SizedBox(height: 20),
+            Text(heading, style: theme.textTheme.labelLarge),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final value in values)
+                  ChoiceChip(
+                    label: Text(lookTitle(value)),
+                    selected: current.choices.contains(value),
+                    onSelected: (_) => pick(current.withValue(value)),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              lookLabels[current.choices.firstWhere(
+                    (choice) => choice.runtimeType == values.first.runtimeType,
+                  )]!
+                  .$2,
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+          const SizedBox(height: 20),
+          Text('Extras', style: theme.textTheme.labelLarge),
+          for (final extra in LookExtra.values)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(lookTitle(extra)),
+              subtitle: Text(lookLabels[extra]!.$2),
+              value: current.has(extra),
+              onChanged: (on) async {
+                if (extra == LookExtra.visualizer &&
+                    on &&
+                    !await MusicLibrary.requestAudioCapture()) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'The visualizer needs the audio permission.',
+                        ),
+                      ),
+                    );
+                  }
+                  return;
+                }
+                pick(lookOptions.value.withValue(extra, on: on));
               },
             ),
         ],

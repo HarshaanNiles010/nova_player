@@ -7,6 +7,7 @@ import 'group_by.dart';
 import 'queue_mode.dart';
 import 'replay_gain.dart';
 import 'search_bar_style.dart';
+import 'look.dart';
 import 'smart_shuffle.dart';
 import 'song.dart';
 import 'song_sort.dart';
@@ -27,6 +28,7 @@ class SettingsStore {
   static const _smartShuffleRulesKey = 'smart_shuffle_rules';
   static const _songSortKey = 'song_sort';
   static const _searchBarStyleKey = 'search_bar_style';
+  static const _lookKey = 'look';
   static const _textScaleKey = 'text_scale';
   static const _downloadedThemesKey = 'downloaded_themes';
   static const _downloadedFontsKey = 'downloaded_fonts';
@@ -34,8 +36,40 @@ class SettingsStore {
   static const _eqGainsKey = 'eq_gains';
   static const _lyricsOffsetKey = 'lyrics_offset_';
   static const _tagEditsKey = 'tag_edits';
+  static const _playbackKey = 'playback';
 
   /// Tags fixed in the app, by [tagEditKey]; the files are never changed.
+  /// Speed, pitch and skip-silence; 1, 1 and off unless changed.
+  Future<({double speed, double pitch, bool skipSilence})>
+  loadPlayback() async {
+    final saved =
+        (await SharedPreferences.getInstance()).getStringList(_playbackKey) ??
+        const [];
+    double number(int i) =>
+        (i < saved.length ? double.tryParse(saved[i]) : null)?.clamp(
+          0.5,
+          2.0,
+        ) ??
+        1.0;
+    return (
+      speed: number(0),
+      pitch: number(1),
+      skipSilence: saved.length > 2 && saved[2] == 'true',
+    );
+  }
+
+  Future<void> savePlayback({
+    required double speed,
+    required double pitch,
+    required bool skipSilence,
+  }) async {
+    await (await SharedPreferences.getInstance()).setStringList(_playbackKey, [
+      '$speed',
+      '$pitch',
+      '$skipSilence',
+    ]);
+  }
+
   Future<Map<String, Map<String, String>>> loadTagEdits() async {
     final json = (await SharedPreferences.getInstance()).getString(
       _tagEditsKey,
@@ -195,10 +229,18 @@ class SettingsStore {
         SearchBarStyle.banner;
   }
 
-  Future<void> saveSearchBarStyle(SearchBarStyle style) async {
+  /// Look-and-feel options; the older search bar setting carries over.
+  Future<LookOptions> loadLook() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_lookKey);
+    if (saved != null) return LookOptions.fromJson(saved);
+    return const LookOptions().withValue(await loadSearchBarStyle());
+  }
+
+  Future<void> saveLook(LookOptions options) async {
     await (await SharedPreferences.getInstance()).setString(
-      _searchBarStyleKey,
-      style.name,
+      _lookKey,
+      options.toJson(),
     );
   }
 

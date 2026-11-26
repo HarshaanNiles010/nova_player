@@ -656,6 +656,22 @@ class PlayerController extends ChangeNotifier {
   }
 
   /// Applies [settings]; a list already shuffled is shuffled again to match.
+  double get speed => player.speed;
+  double get pitch => player.pitch;
+  bool get skipSilence => player.skipSilenceEnabled;
+
+  /// Changes only what is given; the rest stays as it is.
+  Future<void> setPlayback({
+    double? speed,
+    double? pitch,
+    bool? skipSilence,
+  }) async {
+    if (speed != null) await player.setSpeed(speed);
+    if (pitch != null) await player.setPitch(pitch);
+    if (skipSilence != null) await player.setSkipSilenceEnabled(skipSilence);
+    notifyListeners();
+  }
+
   Future<void> setSmartShuffle(SmartShuffle settings) async {
     final needsHistory = settings.enabled && !smartShuffle.enabled;
     smartShuffle = settings;
