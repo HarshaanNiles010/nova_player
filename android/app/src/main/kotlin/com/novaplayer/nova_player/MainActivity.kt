@@ -38,6 +38,7 @@ class MainActivity : AudioServiceActivity() {
     // Backup and playlist files: the result and, when saving, the text to write.
     private var pendingFile: Pair<MethodChannel.Result, String?>? = null
     private var pendingTrashResult: MethodChannel.Result? = null
+    private var pendingCaptureResult: MethodChannel.Result? = null
 
     // Library scans read many files; keep them off the UI thread and in order.
     private val libraryExecutor = Executors.newSingleThreadExecutor()
@@ -49,6 +50,8 @@ class MainActivity : AudioServiceActivity() {
     private val lyricsExecutor = newestFirstExecutor(1)
     // Playback waits on these reads, so they must not queue behind the others.
     private val songInfoExecutor = Executors.newSingleThreadExecutor()
+    // One song at a time; Waveform splits each song across its own threads.
+    private val waveformExecutor = newestFirstExecutor(1)
 
     private fun newestFirstExecutor(threads: Int) = ThreadPoolExecutor(
         threads, threads, 0, TimeUnit.MILLISECONDS,
@@ -59,6 +62,10 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        io.flutter.plugin.common.EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.novaplayer/visualizer"
+        ).setStreamHandler(AudioVisualizer())
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "com.novaplayer/music_library"
@@ -81,6 +88,47 @@ class MainActivity : AudioServiceActivity() {
                             null
                         }
                         runOnUiThread { result.success(tags.orEmpty()) }
+                    }
+                }
+                "requestAudioCapture" -> {
+                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        result.success(true)
+                    } else {
+                        pendingCaptureResult?.success(false)
+                        pendingCaptureResult = result
+                        requestPermissions(
+                            arrayOf(Manifest.permission.RECORD_AUDIO),
+                            CAPTURE_PERMISSION_REQUEST
+                        )
+                    }
+                }
+                "getMediaVolume" -> {
+                    val audio = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+                    val stream = android.media.AudioManager.STREAM_MUSIC
+                    result.success(
+                        audio.getStreamVolume(stream).toDouble() / audio.getStreamMaxVolume(stream)
+                    )
+                }
+                "setMediaVolume" -> {
+                    val audio = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+                    val stream = android.media.AudioManager.STREAM_MUSIC
+                    val volume = call.argument<Double>("volume")!!.coerceIn(0.0, 1.0)
+                    audio.setStreamVolume(
+                        stream,
+                        Math.round(volume * audio.getStreamMaxVolume(stream)).toInt(),
+                        0
+                    )
+                    result.success(null)
+                }
+                "getWaveform" -> {
+                    val uri = Uri.parse(call.argument<String>("uri"))
+                    val key = call.argument<String>("key")!!
+                    val bins = call.argument<Int>("bins")!!
+                    waveformExecutor.execute {
+                        val bars = Waveform.bars(this, uri, key, bins)
+                        runOnUiThread { result.success(bars) }
                     }
                 }
                 "getAudioInfo" -> {
@@ -490,6 +538,13 @@ class MainActivity : AudioServiceActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == CAPTURE_PERMISSION_REQUEST) {
+            pendingCaptureResult?.success(
+                grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+            )
+            pendingCaptureResult = null
+            return
+        }
         if (requestCode != AUDIO_PERMISSION_REQUEST) return
         val result = pendingResult ?: return
         pendingResult = null
@@ -610,5 +665,6 @@ class MainActivity : AudioServiceActivity() {
         private const val MUSIC_FOLDER_REQUEST = 1003
         private const val FILE_REQUEST = 1004
         private const val TRASH_REQUEST = 1005
+        private const val CAPTURE_PERMISSION_REQUEST = 1006
     }
 }
