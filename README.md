@@ -8,8 +8,10 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 
 **Library**
 - Finds every song Android has indexed, plus extra folders you add (for example folders with a `.nomedia` file).
-- Search by title, artist or album, group by artist, artist then album, album, genre, year or format, sort by title, artist, album, recently added, longest or most played, and fast-scroll long lists. Settings → Search bar keeps search within reach while you scroll: a banner fixed at the top, a compact floating bar, or scrolling away with the list. The list keeps your place when you come back from another page; if the song changed on Now Playing, it moves to the new one.
+- Search by title, artist or album, group by artist, artist then album, album, genre, year or format, sort by title, artist, album, recently added, longest or most played, and fast-scroll long lists. Settings → Look & feel → Search bar keeps search within reach while you scroll: a banner fixed at the top, a compact floating bar, or scrolling away with the list. The list keeps your place when you come back from another page; if the song changed on Now Playing, it moves to the new one.
 - Browse by folder.
+- Swipe a song left or right to add it to the queue.
+- The song that is playing stands out in every list: a tinted row, a bold title and a playing mark on its cover (or before its title in the text-only list).
 - Album art, with album and artist pages. Tap the artist or album name on Now Playing to open them.
 - Albums play in disc and track order, so post-rock and live albums run on without gaps; songs without a track number follow by title.
 - Albums are grouped by their album artist tag, so two artists' "Greatest Hits" stay separate and a compilation stays one album. A song without the tag counts under its own artist. The tag is read on Android 11 and later.
@@ -28,7 +30,8 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Sleep timer: pause after 15 to 60 minutes or at the end of the song, fading out over the last 10 seconds.
 - Equalizer in Settings: one slider per band your phone offers, with Flat, Bass, Treble and Vocal presets. It is remembered across restarts.
 - Gapless playback between songs in the same format (sample rate and channels); a format change can leave a short gap.
-- A waveform seek bar on Now Playing, with the file's format, bit depth, sample rate and bitrate above it.
+- A waveform seek bar on Now Playing, with the file's format, bit depth, sample rate and bitrate above it. The waveform is the song's real loudness: the phone decodes the file once, in parallel segments, and keeps the 72 bars (72 bytes per song), so later opens are instant.
+- Speed (0.5–2×), pitch and skip silence, from the speed button on Now Playing. They are remembered across restarts.
 - Volume levelling in Settings keeps songs or albums at a similar volume, using the ReplayGain tags in your files (FLAC, MP3, M4A, Ogg and Opus's R128 tags). Songs without tags play unchanged, and nothing is scanned or changed.
 - Lyrics from the file's tags or a matching `.lrc` file. Synced lyrics follow the song. If they run ahead or behind, the **−** and **+** buttons in the lyrics header shift them 0.5 s earlier or later; the shift is saved for that song.
 - For a song without lyrics, tap **Download lyrics** on Now Playing to fetch them from [LRCLIB](https://lrclib.net), synced when available. Only that song's title, artist, album and length are sent, and only when you tap.
@@ -50,6 +53,7 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
   - the 50 newest songs
   - 50 random songs you have never played
   - a 50-song mix from a genre you pick, ranked by Thompson sampling on your plays and skips
+  - Rediscover: songs you played at least three times, but not in the last 30 days
 - Your own smart playlists from rules, for example "Genre has rock, Skips ≤ 0, Added (days ago) ≤ 365". Rules can use genre, artist, album, format, year, plays, skips, when a song was added and when you last played it. The playlist updates as your library and plays change.
 
 **Look and feel**
@@ -57,6 +61,16 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - More themes can be downloaded in the app from [`themes/catalog.json`](themes/catalog.json).
 - Bundled fonts, plus any [Google Fonts](https://fonts.google.com) family downloaded in the app.
 - Adjustable text size.
+- Settings → Look & feel changes how the player and library look. Pick a whole look (Classic, Glass, Poster, Turntable, Pure, Matching), then change any part of it:
+  - player layout: classic, full-bleed cover, centered card, or a spinning vinyl record
+  - player background: black, the cover's color, the cover's color fading to black, the blurred cover, or your theme's color
+  - seek bar: bars, wave, dots, line, squiggle, thick pill, equalizer or segments
+  - controls: plain, pills, circles or big minimal
+  - artwork shape everywhere: square, rounded, circle, scallop or flower
+  - title alignment, main page layout (list, compact, grid of covers, or text only), search bar, and a docked or floating mini player
+  - extras: a volume slider for the phone's media volume, a full-screen lyrics view over the blurred cover, a progress strip on the mini player, library tabs on the main page, and a visualizer
+- **Copy look** and **Paste look** share a look as a short code, for example with a friend's phone.
+- The visualizer is off by default. Turning it on asks for Android's audio permission, which it uses only to read Nova's own sound, never the microphone.
 
 **Also**
 - Back up playlists, smart playlists, favourites, settings and listening stats to one file, and restore them on a new phone or after a reinstall.
