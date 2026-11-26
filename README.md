@@ -57,9 +57,10 @@ This is a vibe coded app made for myself. If you want to use the code to make yo
 - Your own smart playlists from rules, for example "Genre has rock, Skips ≤ 0, Added (days ago) ≤ 365". Rules can use genre, artist, album, format, year, plays, skips, when a song was added and when you last played it. The playlist updates as your library and plays change.
 
 **Look and feel**
-- Built-in themes, including ones inspired by Outer Wilds, Rain World, Hollow Knight and Celeste, each with a light, dark or system mode.
+- Built-in themes, including ones inspired by Outer Wilds, Rain World, Hollow Knight and Celeste, and Obel (black, off-white and red), each with a light, dark or system mode.
 - More themes can be downloaded in the app from [`themes/catalog.json`](themes/catalog.json).
 - Bundled fonts (Inter, IBM Plex Sans, Space Grotesk, Lora, JetBrains Mono and [Obel Mono](https://typographic.systems/obel-mono), all under the SIL Open Font License), plus any [Google Fonts](https://fonts.google.com) family downloaded in the app.
+- Settings → Font → **Fonts from Typographic Systems** downloads fonts from [typographic.systems](https://typographic.systems), listed in [`fonts/catalog.json`](fonts/catalog.json). Each entry names the font's zip and the regular and bold files inside it, so a new font needs only a catalog entry; downloads are limited to typographic.systems over https.
 - Adjustable text size.
 - Settings → Look & feel changes how the player and library look. Pick a whole look (Classic, Glass, Poster, Turntable, Pure, Matching), then change any part of it:
   - player layout: classic, full-bleed cover, centered card, or a spinning vinyl record
